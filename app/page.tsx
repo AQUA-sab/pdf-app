@@ -1,5 +1,4 @@
 export default function Home() {
   return (
-    <main className="flex min-h-screen" />
-  );
+    <main className="bg-white flex min-h-screen" />);
 }

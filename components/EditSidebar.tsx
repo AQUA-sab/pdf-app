@@ -148,8 +148,13 @@ export function EditSidebar({ documentState, setDocumentState, onClose }: EditSi
                         {documentState.items.map((item, index) => (
                             <div key={item.id} className="group relative flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 p-3 bg-white/[0.02] rounded-xl border border-white/5">
                                 {/* Index Number (Aligned with heading input which is py-2 (8px top/bottom) + text-sm (20px line height) = ~36px height. Flex start with mt-[6px] matches center of input roughly) */}
-                                <div className="flex-shrink-0 w-6 h-6 rounded-full bg-black/40 border border-white/10 flex items-center justify-center text-xs font-bold text-white/50 mt-[6px]">
-                                    {index + 1}
+                                <div className="flex-shrink-0 min-w-[24px] px-1 h-6 rounded bg-black/40 border border-white/10 flex items-center justify-center text-xs font-bold text-white/50 mt-[6px]">
+                                    <ContentEditableDiv
+                                        tagName="span"
+                                        className="w-full text-center outline-none whitespace-nowrap min-w-[10px]"
+                                        html={item.indexText !== undefined ? item.indexText : `${index + 1}`}
+                                        onChange={(val) => handleItemChange(item.id, "indexText", val)}
+                                    />
                                 </div>
 
                                 {/* Item Content Inputs */}

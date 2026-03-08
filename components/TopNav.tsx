@@ -7,11 +7,16 @@ export interface TopNavProps {
     onToggleEditor: () => void;
     onPrint: () => void;
     onClear: () => void;
+    onSavePdf: () => void;
+    onLoadPdf: () => void;
+    onInsertImage: () => void;
+    onInsertShape: () => void;
+    onInsertText: () => void;
 }
 
-export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear }: TopNavProps) {
-    // 0: File, 1: Edit, 2: Insert
-    const [activeIdx, setActiveIdx] = useState(isEditorOpen ? 1 : 0);
+export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear, onSavePdf, onLoadPdf, onInsertImage, onInsertShape, onInsertText }: TopNavProps) {
+    // 0: Save, 1: Load, 2: Edit, 3: Insert
+    const [activeIdx, setActiveIdx] = useState(isEditorOpen ? 2 : 0);
     const [mounted, setMounted] = useState(false);
 
     // UI State for Insert
@@ -23,10 +28,10 @@ export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear }: TopNa
 
     useEffect(() => {
         // Sync active state if editor closes from outside
-        if (!isEditorOpen && activeIdx === 1) {
+        if (!isEditorOpen && activeIdx === 2) {
             setActiveIdx(0);
-        } else if (isEditorOpen && activeIdx !== 1) {
-            setActiveIdx(1);
+        } else if (isEditorOpen && activeIdx !== 2) {
+            setActiveIdx(2);
         }
     }, [isEditorOpen, activeIdx]);
 
@@ -34,10 +39,13 @@ export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear }: TopNa
         setActiveIdx(idx);
 
         switch (name) {
-            case "File":
-                // PDF保存ロジック（後ほど実装）
-                console.log("Saving as PDF...");
-                alert("PDF保存処理を実行します");
+            case "Save":
+                onSavePdf();
+                if (isEditorOpen) onToggleEditor();
+                setIsInsertMenuOpen(false);
+                break;
+            case "Load":
+                onLoadPdf();
                 if (isEditorOpen) onToggleEditor();
                 setIsInsertMenuOpen(false);
                 break;
@@ -48,16 +56,21 @@ export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear }: TopNa
                 break;
             case "Insert":
                 // 挿入ポップアップメニュー表示ロジック
-                setIsInsertMenuOpen(!isInsertMenuOpen);
+                if (activeIdx === 3) {
+                    setIsInsertMenuOpen(!isInsertMenuOpen);
+                } else {
+                    setIsInsertMenuOpen(true);
+                }
                 if (isEditorOpen) onToggleEditor();
                 break;
         }
     };
 
     const navItems = [
-        { name: "File", icon: <FileIcon className="w-5 h-5" /> },
-        { name: "Edit", icon: <EditIcon className="w-5 h-5" /> },
-        { name: "Insert", icon: <InsertIcon className="w-5 h-5" /> },
+        { name: "Save", label: "保存", icon: <SaveIcon className="w-5 h-5" /> },
+        { name: "Load", label: "読込", icon: <LoadIcon className="w-5 h-5" /> },
+        { name: "Edit", label: "編集", icon: <EditIcon className="w-5 h-5" /> },
+        { name: "Insert", label: "追加", icon: <InsertIcon className="w-5 h-5" /> },
     ];
 
     // 追加されたステータスのためのデバッグ出力（UIには表示されないが機能確認用）
@@ -88,9 +101,8 @@ export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear }: TopNa
                 }
             `}} />
 
-            {/* Container with Glassmorphism */}
             <div
-                className="flex items-center p-2 rounded-[24px] border shadow-2xl overflow-hidden relative"
+                className="flex items-center p-2 rounded-[24px] border shadow-2xl relative"
                 style={{
                     backgroundColor: "rgba(18, 18, 20, 0.6)",
                     backdropFilter: "blur(24px)",
@@ -100,7 +112,7 @@ export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear }: TopNa
                 }}
             >
                 {/* 1. Film grain noise overlay */}
-                <div className="absolute inset-0 pointer-events-none opacity-100 mix-blend-overlay top-nav-grain z-0" />
+                <div className="absolute inset-0 pointer-events-none opacity-100 mix-blend-overlay top-nav-grain z-0 rounded-[24px] overflow-hidden" />
 
                 {/* 2. Radial ambient glow (behind everything but inside container) */}
                 <div
@@ -171,7 +183,7 @@ export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear }: TopNa
                             style={{
                                 color: activeIdx === idx ? "#e8af48" : "rgba(255,255,255,0.6)"
                             }}
-                            title={item.name}
+                            title={item.label}
                         >
                             <span className={activeIdx === idx ? "opacity-100" : "opacity-90 hover:opacity-100 transition-opacity"}>
                                 {item.icon}
@@ -218,16 +230,17 @@ export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear }: TopNa
                 </button>
 
                 {/* 挿入ポップアップメニュー (InsertがアクティブでisInsertMenuOpenがtrueの時のみ表示) */}
-                {isInsertMenuOpen && activeIdx === 2 && (
-                    <div className="absolute top-[60px] left-1/2 -translate-x-1/2 w-48 bg-[#1a1a1c]/95 border border-white/10 rounded-xl p-2 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-                        <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-left">
-                            <ImageIcon className="w-4 h-4" /> 画像を挿入
+                {isInsertMenuOpen && activeIdx === 3 && (
+                    <div className="absolute top-[80px] left-1/2 -translate-x-1/2 w-[220px] rounded-2xl p-2 shadow-2xl z-50 animate-in fade-in slide-in-from-top-4 duration-300"
+                        style={{ backgroundColor: 'rgba(30, 30, 35, 0.98)', border: '1px solid rgba(255, 255, 255, 0.15)', backdropFilter: 'blur(20px)' }}>
+                        <button onClick={() => { onInsertImage(); setIsInsertMenuOpen(false); }} className="w-full flex items-center gap-4 px-4 py-3 text-sm rounded-xl transition-all text-left font-semibold" style={{ color: '#ffffff' }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}>
+                            <ImageIcon className="w-5 h-5 text-blue-400" /> 画像を挿入
                         </button>
-                        <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-left">
-                            <ShapeIcon className="w-4 h-4" /> 図形を挿入
+                        <button onClick={() => { onInsertShape(); setIsInsertMenuOpen(false); }} className="w-full flex items-center gap-4 px-4 py-3 text-sm rounded-xl transition-all text-left font-semibold" style={{ color: '#ffffff' }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}>
+                            <ShapeIcon className="w-5 h-5 text-emerald-400" /> 図形を挿入
                         </button>
-                        <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-left">
-                            <TextIcon className="w-4 h-4" /> テキストを挿入
+                        <button onClick={() => { onInsertText(); setIsInsertMenuOpen(false); }} className="w-full flex items-center gap-4 px-4 py-3 text-sm rounded-xl transition-all text-left font-semibold" style={{ color: '#ffffff' }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}>
+                            <TextIcon className="w-5 h-5 text-amber-400" /> テキストを挿入
                         </button>
                     </div>
                 )}
@@ -245,6 +258,26 @@ export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear }: TopNa
 }
 
 // Minimal thin stroke SVG icons (strokeWidth 1.5)
+function SaveIcon(props: React.SVGProps<SVGSVGElement>) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+            <polyline points="17 21 17 13 7 13 7 21" />
+            <polyline points="7 3 7 8 15 8" />
+        </svg>
+    );
+}
+
+function LoadIcon(props: React.SVGProps<SVGSVGElement>) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+        </svg>
+    );
+}
+
 function FileIcon(props: React.SVGProps<SVGSVGElement>) {
     return (
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>

@@ -6,11 +6,12 @@ interface ContentEditableDivProps {
     html: string;
     onChange: (html: string) => void;
     className?: string;
+    style?: React.CSSProperties;
     placeholder?: string;
     tagName?: string;
 }
 
-export function ContentEditableDiv({ html, onChange, className, placeholder, tagName = "div" }: ContentEditableDivProps) {
+export function ContentEditableDiv({ html, onChange, className, style, placeholder, tagName = "div" }: ContentEditableDivProps) {
     const elRef = useRef<HTMLElement>(null);
     const isLocalChange = useRef(false);
 
@@ -50,6 +51,7 @@ export function ContentEditableDiv({ html, onChange, className, placeholder, tag
         onInput: handleInput,
         onBlur: handleInput,
         className: `outline-none cursor-text empty:before:content-[attr(data-placeholder)] empty:before:text-inherit empty:before:opacity-30 ${className || ""}`,
+        style,
         "data-placeholder": placeholder,
         spellCheck: false,
     });

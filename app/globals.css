@@ -12,6 +12,63 @@
   --font-mono: var(--font-geist-mono);
 }
 
+@theme {
+  --font-sans: var(--font-noto-sans-jp);
+}
+
+@media print {
+  @page {
+    margin: 0;
+  }
+
+  body,
+  html {
+    background: white !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: auto !important;
+    height: auto !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Hide UI elements */
+  .fixed,
+  .absolute,
+  .print-hide {
+    display: none !important;
+  }
+
+  /* Reset main layout for printing */
+  main,
+  div#__next,
+  div#root {
+    background: none !important;
+    height: auto !important;
+    min-height: auto !important;
+    width: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+    display: block !important;
+  }
+
+  /* Ensure the paper container spans the full printable area without its own margins */
+  .print-paper {
+    min-height: auto !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    position: static !important;
+  }
+
+  /* Allow page breaks within standard content */
+  .print-page-break {
+    page-break-before: always;
+    break-before: page;
+  }
+}
+
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;

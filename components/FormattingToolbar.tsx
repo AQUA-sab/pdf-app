@@ -1,27 +1,62 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 
 export function FormattingToolbar() {
     const [mounted, setMounted] = useState(false);
+    const savedRange = useRef<Range | null>(null);
 
     useEffect(() => {
         setMounted(true);
     }, []);
 
-    const formatDoc = (cmd: string, value: string | undefined = undefined) => {
+    // Automatically save selection whenever it changes inside a contentEditable element
+    useEffect(() => {
+        const handleSelectionChange = () => {
+            const sel = window.getSelection();
+            if (sel && sel.rangeCount > 0) {
+                const range = sel.getRangeAt(0);
+                // Only save if the selection is inside a contentEditable element
+                const node = range.startContainer;
+                const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
+                if (el && el.closest?.("[contenteditable=true]")) {
+                    savedRange.current = range.cloneRange();
+                }
+            }
+        };
+        document.addEventListener("selectionchange", handleSelectionChange);
+        return () => document.removeEventListener("selectionchange", handleSelectionChange);
+    }, []);
+
+    const restoreAndExec = useCallback((cmd: string, value?: string) => {
+        const sel = window.getSelection();
+        if (sel && savedRange.current) {
+            sel.removeAllRanges();
+            sel.addRange(savedRange.current);
+        }
         document.execCommand(cmd, false, value);
-    };
+        // Re-save the range after exec so subsequent commands still work
+        if (sel && sel.rangeCount > 0) {
+            savedRange.current = sel.getRangeAt(0).cloneRange();
+        }
+    }, []);
 
     if (!mounted) return null;
 
     return (
-        <div className="flex items-center gap-1 bg-[#121214]/60 backdrop-blur-2xl border border-white/10 shadow-lg rounded-2xl p-1.5 z-50">
+        <div
+            className="flex items-center gap-1 bg-[#121214]/60 backdrop-blur-2xl border border-white/10 shadow-lg rounded-2xl p-1.5 z-50"
+            onMouseDown={(e) => {
+                // Prevent the toolbar itself from stealing focus from contentEditable
+                e.preventDefault();
+            }}
+        >
             {/* Font Control Group */}
             <div className="flex items-center gap-1 pr-2 border-r border-white/10">
                 <select
                     className="bg-transparent text-white/80 text-sm font-medium focus:outline-none appearance-none cursor-pointer pl-2 pr-6 py-1 hover:bg-white/5 rounded-lg transition-colors"
-                    onChange={(e) => formatDoc('fontName', e.target.value)}
+                    onMouseDown={(e) => e.stopPropagation()} // Allow select to open
+                    onChange={(e) => { restoreAndExec('fontName', e.target.value); e.target.value = ""; }}
                     title="フォント"
                 >
                     <option value="" className="bg-[#121214]">- フォント -</option>
@@ -32,7 +67,8 @@ export function FormattingToolbar() {
 
                 <select
                     className="bg-transparent text-white/80 text-sm font-medium focus:outline-none appearance-none cursor-pointer pl-2 pr-6 py-1 hover:bg-white/5 rounded-lg transition-colors"
-                    onChange={(e) => formatDoc('fontSize', e.target.value)}
+                    onMouseDown={(e) => e.stopPropagation()} // Allow select to open
+                    onChange={(e) => { restoreAndExec('fontSize', e.target.value); e.target.value = ""; }}
                     title="フォントサイズ (1~7)"
                 >
                     <option value="" className="bg-[#121214]">- サイズ -</option>
@@ -45,21 +81,21 @@ export function FormattingToolbar() {
             {/* Style Control Group */}
             <div className="flex items-center gap-1 px-1 border-r border-white/10">
                 <button
-                    onClick={() => formatDoc('bold')}
+                    onClick={() => restoreAndExec('bold')}
                     className="w-8 h-8 flex items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white transition-colors cursor-pointer"
                     title="太字 (Bold)"
                 >
                     <strong className="font-bold font-serif text-lg">B</strong>
                 </button>
                 <button
-                    onClick={() => formatDoc('italic')}
+                    onClick={() => restoreAndExec('italic')}
                     className="w-8 h-8 flex items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white transition-colors cursor-pointer italic font-serif text-lg"
                     title="斜体 (Italic)"
                 >
                     I
                 </button>
                 <button
-                    onClick={() => formatDoc('underline')}
+                    onClick={() => restoreAndExec('underline')}
                     className="w-8 h-8 flex items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white transition-colors cursor-pointer underline font-serif text-lg"
                     title="下線 (Underline)"
                 >
@@ -74,11 +110,11 @@ export function FormattingToolbar() {
                         <span className="text-white/80 font-bold leading-tight -mt-1">A</span>
                         <div className="w-4 h-1 bg-red-500 rounded-full"></div>
                     </div>
-                    {/* The actual color input is absolute and invisible over the button, but clickable */}
                     <input
                         type="color"
+                        onMouseDown={(e) => e.stopPropagation()} // Allow picker to open
                         className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                        onChange={(e) => formatDoc('foreColor', e.target.value)}
+                        onChange={(e) => restoreAndExec('foreColor', e.target.value)}
                     />
                 </div>
 
@@ -89,8 +125,11 @@ export function FormattingToolbar() {
                     <input
                         type="color"
                         defaultValue="#ffff00"
+                        onMouseDown={(e) => e.stopPropagation()}
                         className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                        onChange={(e) => formatDoc('hiliteColor', e.target.value)} // hiliteColor for some browsers, backColor for others
+                        onChange={(e) => {
+                            restoreAndExec('hiliteColor', e.target.value);
+                        }}
                     />
                 </div>
             </div>

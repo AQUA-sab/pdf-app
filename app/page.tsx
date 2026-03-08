@@ -68,7 +68,7 @@ export default function Home() {
         onClear={handleClear}
       />
 
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50">
+      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50">
         <FormattingToolbar />
       </div>
 

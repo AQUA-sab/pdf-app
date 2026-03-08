@@ -1,44 +1,56 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useCallback } from "react";
 
 interface ContentEditableDivProps {
     html: string;
     onChange: (html: string) => void;
     className?: string;
     placeholder?: string;
-    tagName?: React.ElementType | string;
+    tagName?: string;
 }
 
 export function ContentEditableDiv({ html, onChange, className, placeholder, tagName = "div" }: ContentEditableDivProps) {
-    const contentEditableRef = useRef<HTMLElement>(null);
+    const elRef = useRef<HTMLElement>(null);
+    const isLocalChange = useRef(false);
 
+    // Set initial HTML on mount only
     useEffect(() => {
-        if (contentEditableRef.current && contentEditableRef.current.innerHTML !== html) {
-            // Only update DOM if the local state does not match the incoming prop, 
-            // otherwise cursor jumps to the beginning on every keystroke
-            contentEditableRef.current.innerHTML = html;
+        if (elRef.current) {
+            elRef.current.innerHTML = html;
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Sync external state changes (e.g. from sidebar edits) WITHOUT resetting cursor
+    useEffect(() => {
+        if (isLocalChange.current) {
+            // This update was triggered by our own onInput, skip DOM update
+            isLocalChange.current = false;
+            return;
+        }
+        if (elRef.current && elRef.current.innerHTML !== html) {
+            elRef.current.innerHTML = html;
         }
     }, [html]);
 
-    const handleInput = () => {
-        if (contentEditableRef.current) {
-            onChange(contentEditableRef.current.innerHTML);
+    const handleInput = useCallback(() => {
+        if (elRef.current) {
+            isLocalChange.current = true;
+            onChange(elRef.current.innerHTML);
         }
-    };
+    }, [onChange]);
 
-    const Tag = tagName as any;
+    const Tag = tagName;
 
-    return (
-        <Tag
-            ref={contentEditableRef}
-            contentEditable
-            onInput={handleInput}
-            onBlur={handleInput}
-            className={`outline-none cursor-text empty:before:content-[attr(data-placeholder)] empty:before:text-inherit empty:before:opacity-30 ${className || ""}`}
-            data-placeholder={placeholder}
-            dangerouslySetInnerHTML={{ __html: html }}
-            spellCheck="false"
-        />
-    );
+    return React.createElement(Tag, {
+        ref: elRef,
+        contentEditable: true,
+        suppressContentEditableWarning: true,
+        onInput: handleInput,
+        onBlur: handleInput,
+        className: `outline-none cursor-text empty:before:content-[attr(data-placeholder)] empty:before:text-inherit empty:before:opacity-30 ${className || ""}`,
+        "data-placeholder": placeholder,
+        spellCheck: false,
+    });
 }

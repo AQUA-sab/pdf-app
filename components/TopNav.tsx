@@ -64,7 +64,7 @@ export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear }: TopNa
     if (!mounted) return null;
 
     return (
-        <div className="fixed top-4 left-6 z-50">
+        <div className="fixed top-3 left-6 z-50">
             {/* Embedded custom CSS animations */}
             <style dangerouslySetInnerHTML={{
                 __html: `

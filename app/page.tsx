@@ -1,10 +1,13 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback } from "react";
 import { EditSidebar } from "@/components/EditSidebar";
 import { PreviewPane } from "@/components/PreviewPane";
 import { TopNav } from "@/components/TopNav";
 import { FormattingToolbar } from "@/components/FormattingToolbar";
+import { ShapeSidebar } from "@/components/ShapeSidebar";
+import { ShapeEditSidebar } from "@/components/ShapeEditSidebar";
+import { FontSidebar } from "@/components/FontSidebar";
 import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 
@@ -27,13 +30,13 @@ export interface FloatingElement {
   width: number;
   height: number;
   content: string; // Base64 image data, shape type, or text html
-  shapeType?: 'rect' | 'circle'; // if type === 'shape'
-  // style properties can be added here
+  shapeType?: 'rect' | 'roundedRect' | 'circle' | 'ellipse' | 'triangle' | 'diamond' | 'arrow' | 'star' | 'callout';
   backgroundColor?: string;
   borderColor?: string;
   borderWidth?: number;
   borderRadius?: number;
   textColor?: string;
+  opacity?: number;
 }
 
 export interface DocumentState {
@@ -62,12 +65,126 @@ export default function Home() {
 
   // 2. UI View State
   const [isEditorOpen, setIsEditorOpen] = useState(false);
+  const [isShapeSidebarOpen, setIsShapeSidebarOpen] = useState(false);
+  const [isFontSidebarOpen, setIsFontSidebarOpen] = useState(false);
+  const [editingShapeId, setEditingShapeId] = useState<string | null>(null);
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const fontSavedRange = useRef<Range | null>(null);
+
+  const handleOpenFontSidebar = useCallback(() => {
+    // Save current selection before opening font sidebar
+    const sel = window.getSelection();
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0);
+      const node = range.startContainer;
+      const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
+      if (el && el.closest?.('#pdf-content')) {
+        fontSavedRange.current = range.cloneRange();
+      }
+    }
+    setIsFontSidebarOpen(true);
+    setIsEditorOpen(false);
+    setIsShapeSidebarOpen(false);
+    setEditingShapeId(null);
+  }, []);
+
+  const handleSelectFont = useCallback((fontFamily: string) => {
+    const sel = window.getSelection();
+    if (sel && fontSavedRange.current) {
+      sel.removeAllRanges();
+      sel.addRange(fontSavedRange.current);
+    }
+    document.execCommand('fontName', false, fontFamily);
+    setIsFontSidebarOpen(false);
+  }, []);
 
   // Passed down to TopNav to control editor sidebar via "Edit" button
   const toggleEditor = () => setIsEditorOpen(prev => !prev);
 
   // Handlers for printing and clearing
-  const handlePrint = () => window.print();
+  const handlePrint = async () => {
+    const el = document.getElementById("pdf-content");
+    if (!el) return;
+
+    try {
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        onclone: (clonedDoc) => {
+          const elements = clonedDoc.querySelectorAll("*");
+          const colorProps = ['color', 'backgroundColor', 'borderColor', 'outlineColor', 'textDecorationColor'];
+          elements.forEach((node) => {
+            const el = node as HTMLElement;
+            if (el.getAttribute('style')?.includes('lab')) {
+              const styleStr = el.getAttribute('style') || "";
+              const safeStyle = styleStr.replace(/oklab\([^)]+\)/g, 'rgb(0, 0, 0)').replace(/lab\([^)]+\)/g, 'rgb(0, 0, 0)');
+              if (safeStyle !== styleStr) el.setAttribute('style', safeStyle);
+            }
+            const computed = window.getComputedStyle(el);
+            colorProps.forEach(prop => {
+              const val = computed.getPropertyValue(prop);
+              if (val && (val.includes('oklab') || val.includes('lab('))) {
+                (el.style as any)[prop] = 'rgb(0, 0, 0)';
+              }
+            });
+          });
+        }
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        orientation: documentState.orientation,
+        unit: "mm",
+        format: "a4"
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      const imgRatio = canvas.width / canvas.height;
+      const pageRatio = pdfWidth / pdfHeight;
+
+      let drawWidth = pdfWidth;
+      let drawHeight = pdfWidth / imgRatio;
+
+      // Handle multi-page if content is taller than one A4 page
+      if (drawHeight > pdfHeight) {
+        const totalPages = Math.ceil(drawHeight / pdfHeight);
+        for (let i = 0; i < totalPages; i++) {
+          if (i > 0) pdf.addPage();
+          pdf.addImage(imgData, "PNG", 0, -(pdfHeight * i), drawWidth, drawHeight);
+        }
+      } else {
+        pdf.addImage(imgData, "PNG", 0, 0, drawWidth, drawHeight);
+      }
+
+      const pdfBlob = pdf.output("blob");
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+
+      // Open PDF in new tab - browser's built-in PDF viewer allows printing
+      const printWindow = window.open(pdfUrl, "_blank");
+      if (printWindow) {
+        // Try to trigger print after a short delay
+        printWindow.onload = () => {
+          setTimeout(() => {
+            try { printWindow.print(); } catch { /* PDF viewer handles print */ }
+          }, 1000);
+        };
+      } else {
+        // If popup was blocked, download instead
+        const a = document.createElement("a");
+        a.href = pdfUrl;
+        a.download = `${documentState.title || "document"}_print.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(pdfUrl);
+        alert("ポップアップがブロックされました。PDFをダウンロードしました。ダウンロードしたファイルを開いて印刷してください。");
+      }
+    } catch (e) {
+      console.error("Print failed", e);
+      alert("印刷の準備に失敗しました。");
+    }
+  };
   const handleClear = () => {
     if (window.confirm("画面のすべての内容をクリアしますか？この操作は元に戻せません。")) {
       setDocumentState({
@@ -246,7 +363,14 @@ export default function Home() {
     if (imageInputRef.current) imageInputRef.current.value = "";
   };
 
-  const handleInsertShape = () => {
+  const handleOpenShapeSidebar = () => {
+    setIsShapeSidebarOpen(true);
+    setIsEditorOpen(false);
+    setEditingShapeId(null);
+  };
+
+  const handleInsertShape = (shapeType: FloatingElement['shapeType']) => {
+    const defaultRadius = shapeType === 'roundedRect' ? 12 : 0;
     setDocumentState(prev => ({
       ...prev,
       floatingElements: [
@@ -259,14 +383,32 @@ export default function Home() {
           width: 100,
           height: 100,
           content: '',
-          shapeType: 'rect',
-          backgroundColor: '#3b82f640', // light blue semi transparent
+          shapeType: shapeType || 'rect',
+          backgroundColor: '#3b82f640',
           borderColor: '#3b82f6',
-          borderWidth: 2
+          borderWidth: 2,
+          borderRadius: defaultRadius,
+          opacity: 1,
         }
       ]
     }));
+    setIsShapeSidebarOpen(false);
   };
+
+  const handleEditShape = (id: string) => {
+    setEditingShapeId(id);
+    setIsEditorOpen(false);
+    setIsShapeSidebarOpen(false);
+  };
+
+  const handleUpdateFloatingElement = (id: string, updates: Partial<FloatingElement>) => {
+    setDocumentState(prev => ({
+      ...prev,
+      floatingElements: prev.floatingElements.map(el => el.id === id ? { ...el, ...updates } : el)
+    }));
+  };
+
+  const editingShape = editingShapeId ? documentState.floatingElements.find(el => el.id === editingShapeId) : null;
 
   const handleInsertText = () => {
     setDocumentState(prev => ({
@@ -288,7 +430,7 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0a0a0c] selection:bg-[#e8af48]/30 selection:text-[#e8af48] flex flex-col font-sans overflow-hidden">
+    <main className={`min-h-screen ${isDarkMode ? 'bg-[#0a0a0c]' : 'bg-gray-100'} selection:bg-[#e8af48]/30 selection:text-[#e8af48] flex flex-col font-sans transition-colors duration-300`}>
       {/* Hidden file input for loading PDFs */}
       <input
         type="file"
@@ -315,26 +457,26 @@ export default function Home() {
         onSavePdf={handleSavePdf}
         onLoadPdf={handleLoadPdf}
         onInsertImage={handleInsertImageClick}
-        onInsertShape={handleInsertShape}
+        onInsertShape={handleOpenShapeSidebar}
         onInsertText={handleInsertText}
+        isDarkMode={isDarkMode}
+        onToggleDarkMode={() => setIsDarkMode(!isDarkMode)}
       />
 
       <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50">
-        <FormattingToolbar />
+        <FormattingToolbar onOpenFontSidebar={handleOpenFontSidebar} />
       </div>
 
-      {/* Main Workspace Layout - Fixed height to viewport to prevent full page scroll */}
-      <div className="flex-1 flex w-full relative h-[calc(100vh-80px)] mt-[80px] overflow-hidden">
+      {/* Main Workspace Layout - Flows naturally with window scroll */}
+      <div className="flex-1 flex w-full relative mt-[80px]">
 
         {/* Background effects for the workspace */}
-        <div className="absolute inset-0 pointer-events-none opacity-50 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.02)_0%,transparent_100%)] z-0" />
+        <div className="absolute inset-0 pointer-events-none opacity-50 bg-[radial-gradient(circle_at_50%_50%,rgba(255,255,255,0.02)_0%,transparent_100%)] z-0 fixed" />
 
-        {/* Left Side: Editor Sidebar (Absolute positioning to not squeeze the preview) */}
+        {/* Left Side: Editor Sidebar (Fixed positioning now that window scrolls) */}
         <div
-          className={`absolute left-0 top-0 h-full flex-shrink-0 transition-all duration-500 ease-[cubic-bezier(0.34,1.2,0.64,1)] z-40 ${isEditorOpen ? "w-[360px] translate-x-0 opacity-100" : "w-0 -translate-x-full opacity-0 overflow-hidden"
-            }`}
+          className={`fixed left-0 top-[80px] h-[calc(100vh-80px)] flex-shrink-0 transition-all duration-500 ease-[cubic-bezier(0.34,1.2,0.64,1)] z-40 ${isEditorOpen ? "w-[360px] translate-x-0 opacity-100" : "w-0 -translate-x-full opacity-0 overflow-hidden"}`}
         >
-          {/* Override pt-[80px] inside EditSidebar by passing a custom class or removing it since we now have mt-[80px] on the parent. Wait, EditSidebar is inside this absolute div. Let's make this div fixed to top:80px or just remove the pt-80 from EditSidebar and handle it here. For simplicity we will remove `pt-[80px]` from EditSidebar.tsx as well in the next step, but here we adjust the layout. */}
           <EditSidebar
             documentState={documentState}
             setDocumentState={setDocumentState}
@@ -342,9 +484,42 @@ export default function Home() {
           />
         </div>
 
-        {/* Right Side: Live Preview Pane (Takes full width always, centered, independently scrollable) */}
-        <div className={`flex-1 h-full relative z-0 flex items-center justify-center p-8 overflow-y-auto overflow-x-hidden bg-black/20 transition-all duration-500 ${isEditorOpen ? "pl-[380px]" : ""}`}>
-          <PreviewPane documentState={documentState} setDocumentState={setDocumentState} />
+        {/* Shape Selection Sidebar */}
+        <div
+          className={`fixed left-0 top-[80px] h-[calc(100vh-80px)] flex-shrink-0 transition-all duration-500 ease-[cubic-bezier(0.34,1.2,0.64,1)] z-40 ${isShapeSidebarOpen ? "w-[360px] translate-x-0 opacity-100" : "w-0 -translate-x-full opacity-0 overflow-hidden"}`}
+        >
+          <ShapeSidebar
+            onInsertShape={handleInsertShape}
+            onClose={() => setIsShapeSidebarOpen(false)}
+          />
+        </div>
+
+        {/* Shape Edit Sidebar */}
+        <div
+          className={`fixed left-0 top-[80px] h-[calc(100vh-80px)] flex-shrink-0 transition-all duration-500 ease-[cubic-bezier(0.34,1.2,0.64,1)] z-40 ${editingShape ? "w-[360px] translate-x-0 opacity-100" : "w-0 -translate-x-full opacity-0 overflow-hidden"}`}
+        >
+          {editingShape && (
+            <ShapeEditSidebar
+              element={editingShape}
+              onUpdate={(updates) => handleUpdateFloatingElement(editingShapeId!, updates)}
+              onClose={() => setEditingShapeId(null)}
+            />
+          )}
+        </div>
+
+        {/* Font Selection Sidebar */}
+        <div
+          className={`fixed left-0 top-[80px] h-[calc(100vh-80px)] flex-shrink-0 transition-all duration-500 ease-[cubic-bezier(0.34,1.2,0.64,1)] z-40 ${isFontSidebarOpen ? "w-[360px] translate-x-0 opacity-100" : "w-0 -translate-x-full opacity-0 overflow-hidden"}`}
+        >
+          <FontSidebar
+            onSelectFont={handleSelectFont}
+            onClose={() => setIsFontSidebarOpen(false)}
+          />
+        </div>
+
+        {/* Right Side: Live Preview Pane - Let it grow and dictate window height */}
+        <div className={`flex-1 w-full relative z-0 flex flex-col items-center justify-start min-h-[calc(100vh-80px)] p-8 ${isDarkMode ? 'bg-black/20' : 'bg-gray-200/50'} transition-all duration-500 ${(isEditorOpen || isShapeSidebarOpen || editingShape || isFontSidebarOpen) ? "ml-[360px]" : ""}`}>
+          <PreviewPane documentState={documentState} setDocumentState={setDocumentState} onEditShape={handleEditShape} />
         </div>
       </div>
     </main>

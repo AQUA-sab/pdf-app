@@ -2,13 +2,57 @@
 
 import { useState, useEffect } from "react";
 
-export function TopNav() {
-    const [activeIdx, setActiveIdx] = useState(0);
+export interface TopNavProps {
+    isEditorOpen: boolean;
+    onToggleEditor: () => void;
+    onPrint: () => void;
+    onClear: () => void;
+}
+
+export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear }: TopNavProps) {
+    // 0: File, 1: Edit, 2: Insert
+    const [activeIdx, setActiveIdx] = useState(isEditorOpen ? 1 : 0);
     const [mounted, setMounted] = useState(false);
+
+    // UI State for Insert
+    const [isInsertMenuOpen, setIsInsertMenuOpen] = useState(false);
 
     useEffect(() => {
         setMounted(true);
     }, []);
+
+    useEffect(() => {
+        // Sync active state if editor closes from outside
+        if (!isEditorOpen && activeIdx === 1) {
+            setActiveIdx(0);
+        } else if (isEditorOpen && activeIdx !== 1) {
+            setActiveIdx(1);
+        }
+    }, [isEditorOpen, activeIdx]);
+
+    const handleAction = (idx: number, name: string) => {
+        setActiveIdx(idx);
+
+        switch (name) {
+            case "File":
+                // PDF保存ロジック（後ほど実装）
+                console.log("Saving as PDF...");
+                alert("PDF保存処理を実行します");
+                if (isEditorOpen) onToggleEditor();
+                setIsInsertMenuOpen(false);
+                break;
+            case "Edit":
+                // 編集サイドバー表示ロジック
+                onToggleEditor();
+                setIsInsertMenuOpen(false);
+                break;
+            case "Insert":
+                // 挿入ポップアップメニュー表示ロジック
+                setIsInsertMenuOpen(!isInsertMenuOpen);
+                if (isEditorOpen) onToggleEditor();
+                break;
+        }
+    };
 
     const navItems = [
         { name: "File", icon: <FileIcon className="w-5 h-5" /> },
@@ -16,10 +60,11 @@ export function TopNav() {
         { name: "Insert", icon: <InsertIcon className="w-5 h-5" /> },
     ];
 
+    // 追加されたステータスのためのデバッグ出力（UIには表示されないが機能確認用）
     if (!mounted) return null;
 
     return (
-        <div className="fixed top-8 left-1/2 -translate-x-1/2 z-50">
+        <div className="fixed top-4 left-6 z-50">
             {/* Embedded custom CSS animations */}
             <style dangerouslySetInnerHTML={{
                 __html: `
@@ -117,15 +162,16 @@ export function TopNav() {
                         />
                     </div>
 
-                    {/* Buttons */}
+                    {/* Navigation Buttons */}
                     {navItems.map((item, idx) => (
                         <button
                             key={item.name}
-                            onClick={() => setActiveIdx(idx)}
+                            onClick={() => handleAction(idx, item.name)}
                             className="relative z-10 w-[52px] h-[48px] flex flex-col items-center justify-center rounded-2xl transition-colors duration-300 gap-1"
                             style={{
                                 color: activeIdx === idx ? "#e8af48" : "rgba(255,255,255,0.6)"
                             }}
+                            title={item.name}
                         >
                             <span className={activeIdx === idx ? "opacity-100" : "opacity-90 hover:opacity-100 transition-opacity"}>
                                 {item.icon}
@@ -133,6 +179,58 @@ export function TopNav() {
                         </button>
                     ))}
                 </div>
+
+                {/* Print Button */}
+                <button
+                    onClick={onPrint}
+                    className="relative z-10 w-10 h-10 flex items-center justify-center rounded-full transition-colors duration-300 group"
+                    style={{ color: "rgba(255,255,255,0.7)" }}
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.1)";
+                        e.currentTarget.style.color = "#fff";
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                        e.currentTarget.style.color = "rgba(255,255,255,0.7)";
+                    }}
+                    title="Print"
+                >
+                    <PrintIcon className="w-[18px] h-[18px] group-hover:scale-110 transition-transform duration-300" />
+                </button>
+
+                {/* Trash / Clear Button */}
+                <button
+                    onClick={onClear}
+                    className="relative z-10 w-10 h-10 flex flex-col items-center justify-center rounded-2xl transition-colors duration-300 group ml-1"
+                    style={{ color: "rgba(255,255,255,0.7)" }}
+
+                    onMouseEnter={(e) => {
+                        e.currentTarget.style.backgroundColor = "rgba(255, 60, 60, 0.15)";
+                        e.currentTarget.style.color = "#ff6b6b";
+                    }}
+                    onMouseLeave={(e) => {
+                        e.currentTarget.style.backgroundColor = "transparent";
+                        e.currentTarget.style.color = "rgba(255,255,255,0.7)";
+                    }}
+                    title="Clear Screen"
+                >
+                    <TrashIcon className="w-[18px] h-[18px] group-hover:scale-110 transition-transform duration-300" />
+                </button>
+
+                {/* 挿入ポップアップメニュー (InsertがアクティブでisInsertMenuOpenがtrueの時のみ表示) */}
+                {isInsertMenuOpen && activeIdx === 2 && (
+                    <div className="absolute top-[60px] left-1/2 -translate-x-1/2 w-48 bg-[#1a1a1c]/95 border border-white/10 rounded-xl p-2 shadow-2xl backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-left">
+                            <ImageIcon className="w-4 h-4" /> 画像を挿入
+                        </button>
+                        <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-left">
+                            <ShapeIcon className="w-4 h-4" /> 図形を挿入
+                        </button>
+                        <button className="w-full flex items-center gap-3 px-3 py-2 text-sm text-white/80 hover:text-white hover:bg-white/10 rounded-lg transition-colors text-left">
+                            <TextIcon className="w-4 h-4" /> テキストを挿入
+                        </button>
+                    </div>
+                )}
             </div>
 
             {/* Extremely subtle ambient glow behind the entire nav to separate from background */}
@@ -170,6 +268,53 @@ function InsertIcon(props: React.SVGProps<SVGSVGElement>) {
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+    );
+}
+
+function PrintIcon(props: React.SVGProps<SVGSVGElement>) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+            <polyline points="6 9 6 2 18 2 18 9" />
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+            <rect x="6" y="14" width="12" height="8" />
+        </svg>
+    );
+}
+
+function ImageIcon(props: React.SVGProps<SVGSVGElement>) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <polyline points="21 15 16 10 5 21" />
+        </svg>
+    );
+}
+
+function ShapeIcon(props: React.SVGProps<SVGSVGElement>) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+            <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2" />
+        </svg>
+    );
+}
+
+function TextIcon(props: React.SVGProps<SVGSVGElement>) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+            <polyline points="4 7 4 4 20 4 20 7" />
+            <line x1="9" y1="20" x2="15" y2="20" />
+            <line x1="12" y1="4" x2="12" y2="20" />
+        </svg>
+    );
+}
+
+function TrashIcon(props: React.SVGProps<SVGSVGElement>) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
         </svg>
     );
 }

@@ -32,13 +32,79 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
     // Recalculate page count
     const recalcPages = useCallback(() => {
         if (!contentRef.current) return;
-        const actualHeight = contentRef.current.scrollHeight;
-        if (actualHeight <= pageH + 2) {
-            setPageCount(1);
+
+        const blocks = Array.from(contentRef.current.querySelectorAll('.page-breakable')) as HTMLElement[];
+        blocks.forEach(b => {
+            b.style.removeProperty('--pagination-shift');
+        });
+
+        // Temporarily remove minHeight to accurately measure the raw content height
+        const oldMinHeight = contentRef.current.style.minHeight;
+        contentRef.current.style.minHeight = '0';
+
+        const containerRect = contentRef.current.getBoundingClientRect();
+        const measurements = blocks.map(block => {
+            const rect = block.getBoundingClientRect();
+            return {
+                block,
+                originalTop: rect.top - containerRect.top,
+                height: rect.height
+            };
+        });
+
+        let accumulatedShift = 0;
+        let currentPageIndex = 0;
+
+        const shifts = measurements.map(m => {
+            let currentTop = m.originalTop + accumulatedShift;
+            let finalTop = currentTop;
+
+            let pageByTop = Math.floor(finalTop / (pageH + PAGE_GAP_PX));
+            if (pageByTop > currentPageIndex) {
+                currentPageIndex = pageByTop;
+            }
+
+            let printTop = currentPageIndex * (pageH + PAGE_GAP_PX) + paddingPx;
+            if (finalTop < printTop) {
+                finalTop = printTop;
+            }
+
+            let currentBottom = finalTop + m.height;
+            let printBottom = currentPageIndex * (pageH + PAGE_GAP_PX) + pageH - paddingPx;
+
+            if (currentBottom > printBottom + 2 && finalTop < printBottom) {
+                currentPageIndex++;
+                finalTop = currentPageIndex * (pageH + PAGE_GAP_PX) + paddingPx;
+            }
+
+            const shiftNeeded = finalTop - currentTop;
+            if (shiftNeeded > 0) {
+                accumulatedShift += shiftNeeded;
+                return shiftNeeded;
+            }
+            return 0;
+        });
+
+        shifts.forEach((shift, idx) => {
+            if (shift > 0) {
+                measurements[idx].block.style.setProperty('--pagination-shift', `${shift}px`);
+            }
+        });
+
+        let totalDisplayHeight = 0;
+        if (blocks.length > 0) {
+            const lastM = measurements[measurements.length - 1];
+            totalDisplayHeight = (lastM.originalTop + accumulatedShift) + lastM.height;
         } else {
-            setPageCount(Math.ceil(actualHeight / pageH));
+            totalDisplayHeight = contentRef.current.scrollHeight;
         }
-    }, [pageH]);
+
+        // Restore minHeight immediately after reading
+        contentRef.current.style.minHeight = oldMinHeight;
+
+        const calculatedPages = Math.ceil((totalDisplayHeight + paddingPx) / (pageH + PAGE_GAP_PX));
+        setPageCount(Math.max(1, calculatedPages));
+    }, [pageH, paddingPx]);
 
     useEffect(() => {
         recalcPages();
@@ -81,7 +147,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
 
     return (
         <div className="w-full flex-1 flex flex-col items-center p-8 print:p-0 print:w-auto print:h-auto print:overflow-visible print:bg-white print:block">
-            <style dangerouslySetInnerHTML={{ __html: `@media print { @page { size: A4 ${documentState.orientation}; margin: 0; } }` }} />
+            <style dangerouslySetInnerHTML={{ __html: `@media print { @page { size: A4 ${documentState.orientation}; margin: ${documentState.padding}mm; } }` }} />
 
             {/* Main wrapper determining layout size & controlling zoom */}
             <div
@@ -95,48 +161,48 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                     minHeight: `calc(${pageCount} * var(--page-h) + ${pageCount > 1 ? (pageCount - 1) * PAGE_GAP_PX : 0}px)`,
                 } as React.CSSProperties}
             >
-                {/* 1. Page Backgrounds (Distinct paper sheets with shadows) */}
-                {Array.from({ length: pageCount }, (_, i) => (
-                    <div
-                        key={`page-bg-${i}`}
-                        className="pdf-page absolute left-0 right-0 bg-white print:!shadow-none print-hide"
-                        style={{
-                            top: `${i * (pageH + PAGE_GAP_PX)}px`,
-                            height: 'var(--page-h)',
-                            boxShadow: '0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.04)',
-                            borderRadius: '2px', // Slight paper edge rounding
-                        }}
-                    >
-                        {/* Page Numbers inside each page background */}
-                        {pageCount > 1 && (
-                            <div className="absolute bottom-6 right-8 text-right pointer-events-none">
-                                <span className="text-xs" style={{ color: '#9ca3af' }}>
-                                    {i + 1} / {pageCount}
-                                </span>
-                            </div>
-                        )}
-                    </div>
-                ))}
+                {/* 1. Page Backgrounds (Distinct paper sheets with shadows for screen only) */}
+                <div className="absolute inset-0 pointer-events-none z-0 print-hide flex flex-col" style={{ gap: `${PAGE_GAP_PX}px` }}>
+                    {Array.from({ length: Math.max(1, pageCount) }, (_, i) => (
+                        <div
+                            key={`page-bg-${i}`}
+                            className="w-full bg-white relative"
+                            style={{
+                                height: 'var(--page-h)',
+                                boxShadow: '0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.04)',
+                                borderRadius: '2px', // Slight paper edge rounding
+                                flexShrink: 0
+                            }}
+                        >
+                            {/* Page Numbers inside each visible page background (screen only) */}
+                            {pageCount > 1 && (
+                                <div className="absolute bottom-6 right-8 text-right pointer-events-none">
+                                    <span className="text-xs" style={{ color: '#9ca3af' }}>
+                                        {i + 1} / {pageCount}
+                                    </span>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
 
-                {/* 2. Document Content (Transparent overlay, flows continuously) */}
+                {/* Document Content (Continuous flow) */}
                 <div
                     id="pdf-content"
                     ref={contentRef}
                     onClick={handleBackgroundClick}
-                    className="absolute top-0 left-0 w-full flex flex-col print-paper bg-transparent print:bg-white print:!m-0 outline-none"
+                    className="w-full h-full flex flex-col print:block print:!m-0 outline-none print-paper relative"
                     style={{
-                        minHeight: 'var(--page-h)',
+                        minHeight: `min(calc(${pageCount} * var(--page-h) + ${pageCount > 1 ? (pageCount - 1) * PAGE_GAP_PX : 0}px), 100%)`, // Screen display fallback, but flows naturally
                         padding: `${paddingPx}px`,
                         boxSizing: 'border-box',
                         color: '#000000',
-                        // CSS Mask to hide text that accidentally falls into the page gaps
-                        maskImage: `repeating-linear-gradient(to bottom, black 0px, black var(--page-h), transparent var(--page-h), transparent calc(var(--page-h) + ${PAGE_GAP_PX}px))`,
-                        WebkitMaskImage: `repeating-linear-gradient(to bottom, black 0px, black var(--page-h), transparent var(--page-h), transparent calc(var(--page-h) + ${PAGE_GAP_PX}px))`,
                     }}
                 >
                     {/* Paper Content Wrapper */}
-                    <div className="flex-1 flex flex-col gap-6 relative z-10 w-full">
-                        <div className="flex flex-col pb-6 mb-2" style={{ borderBottom: '1px solid #0000001a' }}>
+                    <div className="flex-1 flex flex-col print:block relative z-10 w-full text-black">
+                        {/* Title and Date - avoid breaking after title */}
+                        <div className="flex flex-col pb-6 mb-8 break-inside-avoid break-after-avoid page-breakable" style={{ borderBottom: '1px solid #0000001a' }}>
                             <div className="flex items-start justify-between">
                                 <ContentEditableDiv
                                     tagName="h1"
@@ -158,7 +224,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                         </div>
 
                         {documentState.isAttendeesVisible !== false && (
-                            <div className="flex gap-4">
+                            <div className="flex gap-4 break-inside-avoid page-breakable mb-6">
                                 <span className="font-semibold min-w-[80px]" style={{ color: '#374151' }}>参加者:</span>
                                 <ContentEditableDiv
                                     tagName="div"
@@ -171,9 +237,9 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                             </div>
                         )}
 
-                        <div className="flex-1 mt-6 flex flex-col gap-6">
+                        <div className="flex-1 mt-6 flex flex-col print:block">
                             {documentState.items.map((item, index) => (
-                                <div key={item.id} className="flex gap-4 items-baseline pb-2">
+                                <div key={item.id} className="flex gap-4 items-baseline pb-2 mb-6 break-inside-avoid relative group page-breakable">
                                     <div className="font-bold w-8 shrink-0 text-xl text-right whitespace-nowrap flex justify-end" style={{ color: '#9ca3af' }}>
                                         <ContentEditableDiv
                                             tagName="span"
@@ -224,11 +290,6 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                                 </div>
                             ))}
 
-                            {documentState.items.length === 0 && (
-                                <div className="text-center py-20 italic" style={{ color: '#9ca3af' }}>
-                                    項目がありません。左のメニューから追加してください。
-                                </div>
-                            )}
                         </div>
                     </div>
 
@@ -246,6 +307,6 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                     ))}
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

@@ -54,7 +54,8 @@ body::-webkit-scrollbar-thumb:hover {
     color: black !important;
     margin: 0 !important;
     padding: 0 !important;
-    width: auto !important;
+    width: 210mm !important;
+    /* Force physical width */
     height: auto !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
@@ -85,6 +86,7 @@ body::-webkit-scrollbar-thumb:hover {
   .print-paper {
     min-height: auto !important;
     margin: 0 !important;
+    padding: 0 !important;
     box-shadow: none !important;
     position: static !important;
   }
@@ -94,6 +96,43 @@ body::-webkit-scrollbar-thumb:hover {
     page-break-before: always;
     break-before: page;
   }
+
+  /* Force table headers to repeat on every new printed page */
+  thead {
+    display: table-header-group;
+  }
+}
+
+/* Pagination Control Utilities (Apply both for screen and print where necessary, but mostly active in print) */
+.page-breakable {
+  margin-top: var(--pagination-shift, 0px);
+  transition: margin-top 0.2s ease-out;
+  /* Smooth transition when pushing to next page */
+}
+
+@media print {
+  @page {
+    margin: 0;
+  }
+
+  .page-breakable {
+    margin-top: 0 !important;
+  }
+}
+
+.break-inside-avoid {
+  page-break-inside: avoid;
+  break-inside: avoid;
+}
+
+.break-after-avoid {
+  page-break-after: avoid;
+  break-after: avoid;
+}
+
+.break-before-page {
+  page-break-before: always;
+  break-before: page;
 }
 
 @media (prefers-color-scheme: dark) {

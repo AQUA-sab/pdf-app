@@ -9,6 +9,7 @@ export interface TopNavProps {
     onClear: () => void;
     onSavePdf: () => void;
     onLoadPdf: () => void;
+    onInsertItem: () => void;
     onInsertImage: () => void;
     onInsertShape: () => void;
     onInsertText: () => void;
@@ -16,7 +17,7 @@ export interface TopNavProps {
     onToggleDarkMode: () => void;
 }
 
-export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear, onSavePdf, onLoadPdf, onInsertImage, onInsertShape, onInsertText, isDarkMode, onToggleDarkMode }: TopNavProps) {
+export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear, onSavePdf, onLoadPdf, onInsertItem, onInsertImage, onInsertShape, onInsertText, isDarkMode, onToggleDarkMode }: TopNavProps) {
     // 0: DarkMode, 1: Save, 2: Load, 3: Edit, 4: Insert, 5: Print, 6: Clear
     const [activeIdx, setActiveIdx] = useState(isEditorOpen ? 3 : 1);
     const [mounted, setMounted] = useState(false);
@@ -172,6 +173,9 @@ export function TopNav({ isEditorOpen, onToggleEditor, onPrint, onClear, onSaveP
                 {isInsertMenuOpen && activeIdx === 4 && (
                     <div className="absolute top-[70px] left-1/2 -translate-x-1/2 w-[220px] rounded-2xl p-2 shadow-2xl z-50"
                         style={{ backgroundColor: 'rgba(30, 30, 35, 0.98)', border: '1px solid rgba(255, 255, 255, 0.15)', backdropFilter: 'blur(20px)' }}>
+                        <button onClick={() => { onInsertItem(); setIsInsertMenuOpen(false); }} className="w-full flex items-center gap-4 px-4 py-3 text-sm rounded-xl transition-all text-left font-semibold cursor-pointer" style={{ color: '#ffffff' }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}>
+                            <ListIcon className="w-5 h-5 text-purple-400" /> 項目を挿入
+                        </button>
                         <button onClick={() => { onInsertImage(); setIsInsertMenuOpen(false); }} className="w-full flex items-center gap-4 px-4 py-3 text-sm rounded-xl transition-all text-left font-semibold cursor-pointer" style={{ color: '#ffffff' }} onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'rgba(255, 255, 255, 0.1)'; }} onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; }}>
                             <ImageIcon className="w-5 h-5 text-blue-400" /> 画像を挿入
                         </button>
@@ -295,6 +299,19 @@ function TrashIcon(props: React.SVGProps<SVGSVGElement>) {
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
             <polyline points="3 6 5 6 21 6" />
             <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+        </svg>
+    );
+}
+
+function ListIcon(props: React.SVGProps<SVGSVGElement>) {
+    return (
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" {...props}>
+            <line x1="8" y1="6" x2="21" y2="6" />
+            <line x1="8" y1="12" x2="21" y2="12" />
+            <line x1="8" y1="18" x2="21" y2="18" />
+            <line x1="3" y1="6" x2="3.01" y2="6" />
+            <line x1="3" y1="12" x2="3.01" y2="12" />
+            <line x1="3" y1="18" x2="3.01" y2="18" />
         </svg>
     );
 }

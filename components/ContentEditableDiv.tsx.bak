@@ -1,0 +1,131 @@
+"use client";
+
+import React, { useRef, useEffect, useCallback } from "react";
+
+interface ContentEditableDivProps {
+    html: string;
+    onChange: (html: string) => void;
+    className?: string;
+    style?: React.CSSProperties;
+    placeholder?: string;
+    tagName?: string;
+    dataAttrs?: Record<string, string>; // data-* 属性
+}
+
+function saveSelection(containerEl: HTMLElement) {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    const preSelectionRange = range.cloneRange();
+    preSelectionRange.selectNodeContents(containerEl);
+    preSelectionRange.setEnd(range.startContainer, range.startOffset);
+    const start = preSelectionRange.toString().length;
+
+    return {
+        start: start,
+        end: start + range.toString().length
+    };
+}
+
+function restoreSelection(containerEl: HTMLElement, savedSel: { start: number, end: number } | null) {
+    if (!savedSel) return;
+    let charIndex = 0;
+    const range = document.createRange();
+    range.setStart(containerEl, 0);
+    range.collapse(true);
+    const nodeStack: Node[] = [containerEl];
+    let node: Node | undefined;
+    let foundStart = false;
+    let stop = false;
+
+    while (!stop && (node = nodeStack.pop())) {
+        if (node.nodeType === 3) { // Text node
+            const nextCharIndex = charIndex + (node.nodeValue?.length || 0);
+            if (!foundStart && savedSel.start >= charIndex && savedSel.start <= nextCharIndex) {
+                range.setStart(node, savedSel.start - charIndex);
+                foundStart = true;
+            }
+            if (foundStart && savedSel.end >= charIndex && savedSel.end <= nextCharIndex) {
+                range.setEnd(node, savedSel.end - charIndex);
+                stop = true;
+            }
+            charIndex = nextCharIndex;
+        } else {
+            let i = node.childNodes.length;
+            while (i--) {
+                nodeStack.push(node.childNodes[i]);
+            }
+        }
+    }
+
+    const sel = window.getSelection();
+    if (sel) {
+        sel.removeAllRanges();
+        sel.addRange(range);
+    }
+}
+
+export function ContentEditableDiv({ html, onChange, className, style, placeholder, tagName = "div", dataAttrs }: ContentEditableDivProps) {
+    const elRef = useRef<HTMLElement>(null);
+    const isLocalChange = useRef(false);
+
+    // Set initial HTML on mount only
+    useEffect(() => {
+        if (elRef.current) {
+            elRef.current.innerHTML = html;
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Sync external state changes (e.g. from sidebar edits) WITHOUT resetting cursor
+    useEffect(() => {
+        if (isLocalChange.current) {
+            // This update was triggered by our own onInput, skip DOM update
+            isLocalChange.current = false;
+            return;
+        }
+        if (elRef.current && elRef.current.innerHTML !== html) {
+            const isActive = document.activeElement === elRef.current;
+            let saved = null;
+            if (isActive) {
+                saved = saveSelection(elRef.current);
+            }
+            
+            elRef.current.innerHTML = html;
+            
+            if (isActive && saved) {
+                try {
+                    // もし分割によりテキストが短くなった場合は終端にクランプされるよう配慮
+                    const currentLen = elRef.current.innerText.length;
+                    if (saved.start > currentLen) saved.start = currentLen;
+                    if (saved.end > currentLen) saved.end = currentLen;
+                    restoreSelection(elRef.current, saved);
+                } catch (e) {
+                    console.warn("Failed to restore selection:", e);
+                }
+            }
+        }
+    }, [html]);
+
+    const handleInput = useCallback(() => {
+        if (elRef.current) {
+            isLocalChange.current = true;
+            onChange(elRef.current.innerHTML);
+        }
+    }, [onChange]);
+
+    const Tag = tagName;
+
+    return React.createElement(Tag, {
+        ref: elRef,
+        contentEditable: true,
+        suppressContentEditableWarning: true,
+        onInput: handleInput,
+        onBlur: handleInput,
+        className: `outline-none cursor-text empty:before:content-[attr(data-placeholder)] empty:before:text-inherit empty:before:opacity-30 ${className || ""}`,
+        style,
+        "data-placeholder": placeholder,
+        spellCheck: false,
+        ...dataAttrs,
+    });
+}

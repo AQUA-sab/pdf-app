@@ -18,67 +18,68 @@ const PAGE_H_A4 = 1123; // px
 // Gap between pages in px
 const PAGE_GAP_PX = 40;
 
-function findSplitIndex(allText: string, widthPx: number, computedStyle: CSSStyleDeclaration, availableHeight: number): number {
-    if (!allText) return -1;
+/**
+ * 指定エレメントのテキストが availableHeight 内に収まる分割点をバイナリサーチで特定
+ * @returns 分割点の文字インデックス。分割不要ならば -1
+ */
+function findSplitIndex(allText: string, el: HTMLElement, availableHeight: number): number {
+    if (!allText || el.scrollHeight <= availableHeight) return -1;
 
+    const w = el.getBoundingClientRect().width;
+    if (w <= 0) return -1;
+
+    const cs = getComputedStyle(el);
     const clone = document.createElement('div');
     clone.style.cssText = [
         'position:absolute', 'left:-9999px', 'top:-9999px',
-        'visibility:hidden', `width:${widthPx}px`, 'height:auto',
-        `font-size:${computedStyle.fontSize}`, `line-height:${computedStyle.lineHeight}`,
-        `font-family:${computedStyle.fontFamily}`, `white-space:${computedStyle.whiteSpace}`,
-        `word-break:${computedStyle.wordBreak}`, `overflow-wrap:${computedStyle.overflowWrap}`,
-        `padding:${computedStyle.padding}`
+        'visibility:hidden', `width:${w}px`, 'height:auto',
+        `font-size:${cs.fontSize}`, `line-height:${cs.lineHeight}`,
+        `font-family:${cs.fontFamily}`, `white-space:${cs.whiteSpace}`,
+        `word-break:${cs.wordBreak}`, `overflow-wrap:${cs.overflowWrap}`,
+        `padding:${cs.padding}`
     ].join(';');
     document.body.appendChild(clone);
 
-    // まず全テキストが収まるか確認
-    clone.innerHTML = allText;
-    if (clone.scrollHeight <= availableHeight) {
-        document.body.removeChild(clone);
-        return -1; // 分割不要
-    }
-
-    // HTMLタグ内部での分割を避けるため、安全な分割点（文字列のインデックス）をリストアップ
-    const validIndices: number[] = [];
-    let insideTag = false;
-    for (let i = 0; i <= allText.length; i++) {
-        if (i < allText.length && allText[i] === '<') {
-            insideTag = true;
-        }
-        
-        if (!insideTag) {
-            validIndices.push(i);
-        }
-        
-        if (i < allText.length && allText[i] === '>') {
-            insideTag = false;
-        }
-    }
-
-    let lo = 0, hi = validIndices.length - 1;
-    let bestSplit = -1;
-
+    let lo = 0, hi = allText.length;
+    let best = -1;
     while (lo <= hi) {
         let mid = Math.floor((lo + hi) / 2);
-        let splitPos = validIndices[mid];
 
-        if (splitPos === 0) {
+        // HTMLタグの途中で分割しないように調整
+        let insideTag = false;
+        let ltIndex = -1;
+        for (let i = 0; i <= mid; i++) {
+            if (allText[i] === '<') { insideTag = true; ltIndex = i; }
+            if (allText[i] === '>') insideTag = false;
+        }
+        if (insideTag && ltIndex !== -1) {
+            mid = ltIndex; // タグの前まで戻す
+            if (mid <= lo) {
+                // 無限ループ回避: タグの末尾まで進める
+                const nextGt = allText.indexOf('>', mid);
+                if (nextGt !== -1) {
+                    mid = nextGt + 1;
+                } else {
+                    break;
+                }
+            }
+        }
+        if (mid === 0) {
             lo = mid + 1;
             continue;
         }
 
-        clone.innerHTML = allText.substring(0, splitPos);
+        clone.innerHTML = allText.substring(0, mid);
         if (clone.scrollHeight <= availableHeight) {
-            bestSplit = splitPos;
+            best = mid;
             lo = mid + 1;
         } else {
             hi = mid - 1;
         }
     }
-
     document.body.removeChild(clone);
-    return bestSplit > 0 ? bestSplit : -1;
+
+    return best > 0 ? best : -1;
 }
 
 export function PreviewPane({ documentState, setDocumentState, onEditShape }: PreviewPaneProps) {
@@ -92,23 +93,23 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
     // Padding converted from mm to px: roughly 3.7795 px per mm.
     const paddingPx = documentState.padding * 3.7795;
 
-    // floatingElementsの最新値を常にrefで保持
+    // floatingElementsの最新値を常にrefで保持（recalcPages内から参照するため）
     const floatingElementsRef = useRef(documentState.floatingElements);
     useEffect(() => {
         floatingElementsRef.current = documentState.floatingElements;
     });
 
-    // ============================================================
-    // ページ数の計算（.page-breakable ブロックの位置計算）
-    // ============================================================
+    // Recalculate page count (テキストブロックの折り返し計算 + ページ数確定)
     const recalcPages = useCallback(() => {
         if (!contentRef.current) return;
 
+        // --- テキストブロックのページ送り計算 ---
         const blocks = Array.from(contentRef.current.querySelectorAll('.page-breakable')) as HTMLElement[];
         blocks.forEach(b => {
             b.style.removeProperty('--pagination-shift');
         });
 
+        // Temporarily remove minHeight to accurately measure the raw content height
         const oldMinHeight = contentRef.current.style.minHeight;
         contentRef.current.style.minHeight = '0';
 
@@ -166,11 +167,14 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
             const lastM = measurements[measurements.length - 1];
             totalDisplayHeight = (lastM.originalTop + accumulatedShift) + lastM.height;
         } else {
+            // ブロックがない場合は上下余白分だけ（空ドキュメントは1ページ）
             totalDisplayHeight = paddingPx * 2;
         }
 
+        // Restore minHeight immediately after reading
         contentRef.current.style.minHeight = oldMinHeight;
 
+        // フローティング要素の最大下端もページ数計算に考慮（refから参照）
         let floatingMaxBottom = 0;
         floatingElementsRef.current?.forEach(el => {
             const bottom = el.y + el.height;
@@ -182,20 +186,22 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
         setPageCount(Math.max(1, calculatedPages));
     }, [pageH, paddingPx]);
 
-    // ============================================================
-    // フローティング要素の自動ページ送り
-    // ============================================================
+    // フローティング要素が余白をはみ出したら次ページへ自動移動（recalcPagesとは独立したEffect）
     useEffect(() => {
         setDocumentState(prev => {
             if (!prev.floatingElements || prev.floatingElements.length === 0) return prev;
 
             let changed = false;
             const updated = prev.floatingElements.map(el => {
+                // 要素が所属するページを計算
                 const pageIndex = Math.floor(el.y / (pageH + PAGE_GAP_PX));
+                // そのページの余白内の下端（ピクセル、絶対座標）
                 const pageBottom = pageIndex * (pageH + PAGE_GAP_PX) + pageH - paddingPx;
+                // 要素の絶対下端
                 const elBottom = el.y + el.height;
 
                 if (elBottom > pageBottom + 2) {
+                    // 次ページの余白先頭に移動
                     const newY = (pageIndex + 1) * (pageH + PAGE_GAP_PX) + paddingPx;
                     changed = true;
                     return { ...el, y: newY };
@@ -208,22 +214,27 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
         });
     }, [documentState.floatingElements, pageH, paddingPx, setDocumentState]);
 
-    // ============================================================
-    // テキスト分割ロジック（デバウンス + RAF で安全にDOM計測）
-    // ============================================================
-    const splitTimerRef = useRef<number | null>(null);
+    // itemsの最新値をrefで保持（分割ロジック内でのstate参照用）
+    const itemsRef = useRef(documentState.items);
+    useEffect(() => {
+        itemsRef.current = documentState.items;
+    });
+
+    // 分割計算中フラグ（MutationObserverの再発火を防止する）
     const isSplittingRef = useRef(false);
 
-    const doSplit = useCallback(() => {
+    // 本文が余白を超えたら超えた文字のみ次ページへ分割する関数
+    const recalcDescriptionSplits = useCallback(() => {
         if (!contentRef.current) return;
-
+        isSplittingRef.current = true;
         const containerRect = contentRef.current.getBoundingClientRect();
-        let anyChanged = false;
 
-        // 現在のstate itemsを使いたいので、refで取得しない
-        // 代わりにsetDocumentState内のprevを使う
         setDocumentState(prev => {
-            if (!prev.items.length) return prev;
+            if (!prev.items.length) {
+                isSplittingRef.current = false;
+                return prev;
+            }
+            let changed = false;
 
             const newItems = prev.items.map(item => {
                 const descEl = contentRef.current?.querySelector(
@@ -231,150 +242,94 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                 ) as HTMLElement | null;
                 if (!descEl) return item;
 
-                // 全テキスト（description + continuations を結合）
+                // Continuationsも含めたこのアイテムの全テキスト
                 const allText = [item.description, ...(item.descriptionContinuations || [])].join('');
-                if (!allText) return item;
 
                 const rect = descEl.getBoundingClientRect();
                 const visualTop = rect.top - containerRect.top;
-
-                // このテキストブロックが属するページのインデックス
+                
+                // ContentEditableDivの実際の高さ（scrollHeight）を使って収まるか判定する
+                // padding-top/bottom は計算に入れないため、素直に利用可能高さと比較する
                 const pageIdx = Math.max(0, Math.floor(visualTop / (pageH + PAGE_GAP_PX)));
-                // そのページの印刷可能エリアの下端
                 const pagePrintBottom = pageIdx * (pageH + PAGE_GAP_PX) + pageH - paddingPx;
-                // テキストブロック上端から使える高さ
                 const availableHeight = pagePrintBottom - visualTop;
 
-                if (availableHeight <= 0) return item;
-
-                const cs = getComputedStyle(descEl);
-                const w = descEl.getBoundingClientRect().width;
-
-                // テキスト全体を仮にcloneに流して高さを確認
-                const testClone = document.createElement('div');
-                testClone.style.cssText = [
-                    'position:absolute', 'left:-9999px', 'top:-9999px',
-                    'visibility:hidden', `width:${w}px`, 'height:auto',
-                    `font-size:${cs.fontSize}`, `line-height:${cs.lineHeight}`,
-                    `font-family:${cs.fontFamily}`, `white-space:${cs.whiteSpace}`,
-                    `word-break:${cs.wordBreak}`, `overflow-wrap:${cs.overflowWrap}`,
-                    `padding:${cs.padding}`
-                ].join(';');
-                document.body.appendChild(testClone);
-                testClone.innerHTML = allText;
-                const totalHeight = testClone.scrollHeight;
-                document.body.removeChild(testClone);
-
-                if (totalHeight <= availableHeight + 2) {
-                    // 全文が収まる → continuationsを解消
+                // paddingPxの余裕を持たせる（下部余白にかからないようにする）
+                if (descEl.scrollHeight <= availableHeight) {
+                    // 全文が現在のページに収まっている場合
                     if ((item.descriptionContinuations?.length ?? 0) > 0) {
-                        anyChanged = true;
+                        changed = true;
                         return { ...item, description: allText, descriptionContinuations: [] };
                     }
                     return item;
                 }
 
-                // 収まらない → 最初の分割位置を求める
-                const firstSplitIdx = findSplitIndex(allText, w, cs, availableHeight);
-                if (firstSplitIdx <= 0 || firstSplitIdx >= allText.length) return item;
+                // 収まらない場合、分割を実行
+                if (availableHeight <= 16) return item; // 1行も収まらないほど狭い場合は無視（本来は次ページ送りになるが、親ブロックが移動するはず）
 
-                const firstPart = allText.substring(0, firstSplitIdx);
-                let remaining = allText.substring(firstSplitIdx);
-                const newContinuations: string[] = [];
+                const splitIdx = findSplitIndex(allText, descEl, availableHeight);
+                if (splitIdx <= 0 || splitIdx >= allText.length) return item;
 
-                // 2ページ目以降の分割（各ページはフルサイズ pageH - 2 * paddingPx を使用可能）
-                const fullPageHeight = Math.max(100, pageH - 2 * paddingPx);
-                let safety = 0;
-                while (remaining.length > 0 && safety < 50) {
-                    safety++;
-                    const nextSplitIdx = findSplitIndex(remaining, w, cs, fullPageHeight);
-                    if (nextSplitIdx === -1 || nextSplitIdx >= remaining.length) {
-                        newContinuations.push(remaining);
-                        break;
-                    } else {
-                        newContinuations.push(remaining.substring(0, nextSplitIdx));
-                        remaining = remaining.substring(nextSplitIdx);
-                    }
-                }
+                const firstPart = allText.substring(0, splitIdx);
+                const rest = allText.substring(splitIdx).trimStart();
 
                 // 既に同じ分割状態ならスキップ（無限ループ防止）
                 if (firstPart === item.description &&
-                    JSON.stringify(item.descriptionContinuations || []) === JSON.stringify(newContinuations)) {
+                    JSON.stringify(item.descriptionContinuations ?? []) === JSON.stringify(rest ? [rest] : [])) {
                     return item;
                 }
 
-                anyChanged = true;
-                return { ...item, description: firstPart, descriptionContinuations: newContinuations };
+                changed = true;
+                return { ...item, description: firstPart, descriptionContinuations: rest ? [rest] : [] };
             });
 
-            if (!anyChanged) {
+            if (!changed) {
                 isSplittingRef.current = false;
                 return prev;
             }
+            
+            // 変更がある場合は、コンポーネントの再レンダリング時（次のuseEffect）に解除する
             return { ...prev, items: newItems };
         });
-    }, [pageH, paddingPx, setDocumentState]);
+    }, [pageH, paddingPx]);
 
-    // デバウンス付きの分割トリガー
-    const scheduleSplit = useCallback(() => {
-        if (splitTimerRef.current) {
-            cancelAnimationFrame(splitTimerRef.current);
-        }
-        splitTimerRef.current = requestAnimationFrame(() => {
-            isSplittingRef.current = true;
-            doSplit();
-            splitTimerRef.current = null;
-        });
-    }, [doSplit]);
-
-    // 分割後の再レンダリングで、残りテキスト（continuation）がまだ溢れていれば再分割
+    // itemsの変更（分割処理後）がDOMに反映されたらフラグを解除する
     useEffect(() => {
         if (isSplittingRef.current) {
-            // DOMが確定した後に再度チェック
-            const raf = requestAnimationFrame(() => {
-                doSplit();
-                // doSplit内で changed === false なら isSplittingRef は false に戻る
-            });
-            return () => cancelAnimationFrame(raf);
+            // 分割が収束する（changed === false）まで再計算を走らせ、完了後にfalseへ戻す
+            recalcDescriptionSplits();
         }
-    }, [documentState.items, doSplit]);
+    }, [documentState.items, recalcDescriptionSplits]);
 
-    // ============================================================
-    // MutationObserverでコンテンツ変更を検知 → ページ再計算 + 分割
-    // ============================================================
     useEffect(() => {
         recalcPages();
-        scheduleSplit();
-
+        recalcDescriptionSplits();
         const observer = new MutationObserver(() => {
             recalcPages();
-            if (!isSplittingRef.current) scheduleSplit();
+            // 分割計算中のDOMアップデートによる再発動をスキップ
+            if (!isSplittingRef.current) recalcDescriptionSplits();
         });
-
         if (contentRef.current) {
-            observer.observe(contentRef.current, {
-                childList: true, subtree: true, characterData: true,
-                attributes: true, attributeFilter: ['class']
-            });
+            // style属性の変更は無限ループを引き起こすため除外
+            observer.observe(contentRef.current, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] });
         }
-
+        
         const handleResize = () => {
             recalcPages();
-            if (!isSplittingRef.current) scheduleSplit();
+            if (!isSplittingRef.current) recalcDescriptionSplits();
         };
         window.addEventListener("resize", handleResize);
-
+        
         return () => {
             observer.disconnect();
             window.removeEventListener("resize", handleResize);
         };
-    }, [recalcPages, scheduleSplit]);
+    }, [recalcPages, recalcDescriptionSplits]);
 
-    // documentState変更時にページ再計算
     useEffect(() => {
-        const t = setTimeout(() => { recalcPages(); scheduleSplit(); }, 50);
+        const t = setTimeout(() => { recalcPages(); recalcDescriptionSplits(); }, 50);
         return () => clearTimeout(t);
-    }, [documentState, recalcPages, scheduleSplit]);
+    }, [documentState, recalcPages, recalcDescriptionSplits]);
 
     const handleBackgroundClick = (e: React.MouseEvent) => {
         if (!(e.target as HTMLElement).closest('.group.absolute')) {
@@ -409,11 +364,11 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                     '--page-h': `${pageH}px`,
                     width: 'var(--page-w)',
                     transformOrigin: 'top left',
-                    transform: 'scale(1)',
+                    transform: 'scale(1)', // Prepared for future zoom state
                     minHeight: `calc(${pageCount} * var(--page-h) + ${pageCount > 1 ? (pageCount - 1) * PAGE_GAP_PX : 0}px)`,
                 } as React.CSSProperties}
             >
-                {/* 1. Page Backgrounds */}
+                {/* 1. Page Backgrounds (Distinct paper sheets with shadows for screen only) */}
                 <div className="absolute inset-0 pointer-events-none z-0 print-hide flex flex-col" style={{ gap: `${PAGE_GAP_PX}px` }}>
                     {Array.from({ length: Math.max(1, pageCount) }, (_, i) => (
                         <div
@@ -426,7 +381,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                                 flexShrink: 0
                             }}
                         >
-                            {/* 上部余白エリア */}
+                            {/* 上部余白エリア（視覚的ガイド：点線） */}
                             <div
                                 className="absolute left-0 right-0 top-0 pointer-events-none"
                                 style={{
@@ -435,7 +390,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                                     background: 'rgba(0,0,0,0.012)',
                                 }}
                             />
-                            {/* 下部余白エリア */}
+                            {/* 下部余白エリア（上部余白と同じ幅・同じスタイル） */}
                             <div
                                 className="absolute left-0 right-0 bottom-0 pointer-events-none"
                                 style={{
@@ -444,7 +399,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                                     background: 'rgba(0,0,0,0.012)',
                                 }}
                             />
-                            {/* Page Numbers */}
+                            {/* Page Numbers（下部余白エリア内の右側） */}
                             {pageCount > 1 && (
                                 <div
                                     className="absolute right-8 text-right pointer-events-none"
@@ -466,7 +421,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                     onClick={handleBackgroundClick}
                     className="w-full h-full flex flex-col print:block print:!m-0 outline-none print-paper relative"
                     style={{
-                        minHeight: `min(calc(${pageCount} * var(--page-h) + ${pageCount > 1 ? (pageCount - 1) * PAGE_GAP_PX : 0}px), 100%)`,
+                        minHeight: `min(calc(${pageCount} * var(--page-h) + ${pageCount > 1 ? (pageCount - 1) * PAGE_GAP_PX : 0}px), 100%)`, // Screen display fallback, but flows naturally
                         padding: `${paddingPx}px`,
                         boxSizing: 'border-box',
                         color: '#000000',
@@ -474,7 +429,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                 >
                     {/* Paper Content Wrapper */}
                     <div className="flex-1 flex flex-col print:block relative z-10 w-full text-black">
-                        {/* Title and Date */}
+                        {/* Title and Date - avoid breaking after title */}
                         <div className="flex flex-col pb-6 mb-8 break-inside-avoid break-after-avoid page-breakable" style={{ borderBottom: '1px solid #0000001a' }}>
                             <div className="flex items-start justify-between">
                                 <ContentEditableDiv
@@ -513,7 +468,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                         <div className="flex-1 mt-6 flex flex-col print:block">
                             {documentState.items.map((item, index) => (
                                 <React.Fragment key={item.id}>
-                                    {/* 見出し行 */}
+                                    {/* 見出し行（インデックス番号 + 見出し） - 独立したpage-breakable */}
                                     <div className="flex gap-4 items-baseline pb-1 break-inside-avoid relative group page-breakable">
                                         <div className="font-bold w-8 shrink-0 text-xl text-right whitespace-nowrap flex justify-end" style={{ color: '#9ca3af' }}>
                                             <ContentEditableDiv
@@ -544,7 +499,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                                             />
                                         </div>
                                     </div>
-                                    {/* 本文（1ページ目の分） */}
+                                    {/* 本文（見出しとは独立した、文字単位で分割される純粋なフローブロック） */}
                                     <div className="flex gap-4 pb-2 mb-2 break-inside-avoid relative">
                                         <div className="w-8 shrink-0" />
                                         <div className="flex-1 flex flex-col gap-2">
@@ -557,18 +512,23 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                                                 onChange={(val) => {
                                                     setDocumentState(prev => ({
                                                         ...prev,
-                                                        items: prev.items.map(i => i.id === item.id ? { ...i, description: val } : i)
+                                                        items: prev.items.map(i => {
+                                                            if (i.id !== item.id) return i;
+                                                            // 分割計算中はcontinuationsをリセットしない（入力ラグ・テキスト増殖を防ぐため）
+                                                            if (isSplittingRef.current) {
+                                                                return { ...i, description: val };
+                                                            }
+                                                            return { ...i, description: val, descriptionContinuations: [] };
+                                                        })
                                                     }));
                                                 }}
                                                 placeholder="本文"
                                             />
                                         </div>
                                     </div>
-                                    {/* 本文の続き（余白超過分 → 次ページ以降） */}
+                                    {/* 本文の続き（余白超過分 - 次ページ以降に送られる独立したブロック） */}
                                     {(item.descriptionContinuations || []).map((cont, ci) => (
-                                        <div key={`${item.id}-cont-${ci}`}
-                                            className="flex gap-4 pb-2 mb-2 page-breakable relative"
-                                        >
+                                        <div key={`${item.id}-cont-${ci}`} className="flex gap-4 pb-2 mb-2 break-inside-avoid page-breakable relative" style={{ marginTop: ci === 0 ? PAGE_GAP_PX + paddingPx * 2 : 0 }}>
                                             <div className="w-8 shrink-0" />
                                             <div className="flex-1 flex flex-col gap-2">
                                                 <ContentEditableDiv
@@ -577,16 +537,27 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                                                     style={{ color: '#1f2937' }}
                                                     html={cont}
                                                     onChange={(val) => {
+                                                        // 続きブロックを編集したら全部統合してcontinuationsをリセット（ただし分割計算中は統合スキップ）
                                                         setDocumentState(prev => {
                                                             const it = prev.items.find(i => i.id === item.id);
                                                             if (!it) return prev;
-                                                            // 変更を反映。再分割は doSplit/scheduleSplit が非同期に行う
                                                             const parts = [...(it.descriptionContinuations || [])];
-                                                            parts[ci] = val;
+                                                            parts[ci] = val; // current page text
+
+                                                            if (isSplittingRef.current) {
+                                                                return {
+                                                                    ...prev,
+                                                                    items: prev.items.map(i => i.id === item.id
+                                                                        ? { ...i, descriptionContinuations: parts }
+                                                                        : i)
+                                                                };
+                                                            }
+
+                                                            const combined = [it.description, ...parts].join('');
                                                             return {
                                                                 ...prev,
                                                                 items: prev.items.map(i => i.id === item.id
-                                                                    ? { ...i, descriptionContinuations: parts }
+                                                                    ? { ...i, description: combined, descriptionContinuations: [] }
                                                                     : i)
                                                             };
                                                         });

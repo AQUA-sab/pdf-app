@@ -131,94 +131,12 @@ export function EditSidebar({ documentState, setDocumentState, onClose }: EditSi
 
                 <div className="h-px bg-white/5 w-full"></div>
 
-                {/* 3. Items List */}
-                <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                        <label className="text-xs font-semibold text-white/50 uppercase tracking-wider">項目 (Items)</label>
-                        <button
-                            onClick={handleAdd}
-                            className="flex items-center justify-center bg-[#e8af48]/10 hover:bg-[#e8af48]/20 text-[#e8af48] border border-[#e8af48]/20 rounded-md p-1 transition-colors"
-                            title="Add item"
-                        >
-                            <PlusIcon className="w-4 h-4" />
-                        </button>
-                    </div>
-
-                    <div className="space-y-6">
-                        {documentState.items.map((item, index) => (
-                            <div key={item.id} className="group relative flex items-start gap-3 animate-in fade-in slide-in-from-bottom-2 duration-300 p-3 bg-white/[0.02] rounded-xl border border-white/5">
-                                {/* Index Number (Aligned with heading input which is py-2 (8px top/bottom) + text-sm (20px line height) = ~36px height. Flex start with mt-[6px] matches center of input roughly) */}
-                                <div className="flex-shrink-0 min-w-[24px] px-1 h-6 rounded bg-black/40 border border-white/10 flex items-center justify-center text-xs font-bold text-white/50 mt-[6px]">
-                                    <ContentEditableDiv
-                                        tagName="span"
-                                        className="w-full text-center outline-none whitespace-nowrap min-w-[10px]"
-                                        html={item.indexText !== undefined ? item.indexText : `${index + 1}`}
-                                        onChange={(val) => handleItemChange(item.id, "indexText", val)}
-                                    />
-                                </div>
-
-                                {/* Item Content Inputs */}
-                                <div className="flex-1 space-y-3">
-                                    <div className="flex items-center gap-2">
-                                        <div className="flex-1">
-                                            <ContentEditableDiv
-                                                tagName="div"
-                                                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-1 focus:ring-[#e8af48] focus:border-[#e8af48] transition-colors min-h-[38px]"
-                                                html={item.heading}
-                                                onChange={(val) => handleItemChange(item.id, "heading", val)}
-                                                placeholder="見出し..."
-                                            />
-                                        </div>
-                                        <button
-                                            onClick={() => handleRemoveItem(item.id)}
-                                            className="flex-shrink-0 w-8 h-[38px] bg-red-500/10 hover:bg-red-500/20 text-red-500 rounded-lg flex items-center justify-center transition-colors border border-red-500/20"
-                                            title="この項目を削除"
-                                        >
-                                            <CloseIcon className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                    <ContentEditableDiv
-                                        tagName="div"
-                                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#e8af48] focus:border-[#e8af48] transition-colors min-h-[80px]"
-                                        html={item.description || ""}
-                                        onChange={(val) => handleItemChange(item.id, "description", val)}
-                                        placeholder="本文（詳細内容）..."
-                                    />
-                                </div>
-                            </div>
-                        ))}
-                        {documentState.items.length === 0 && (
-                            <div className="text-center text-xs text-white/30 py-4 border border-dashed border-white/10 rounded-lg">
-                                項目がありません。右上の＋ボタンから追加してください。
-                            </div>
-                        )}
-                    </div>
-                </div>
-
             </div>
         </div>
     );
 }
 
 // Icons
-function PlusIcon(props: React.SVGProps<SVGSVGElement>) {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-    );
-}
-
-function CloseIcon(props: React.SVGProps<SVGSVGElement>) {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-        </svg>
-    );
-}
-
 function PortraitIcon(props: React.SVGProps<SVGSVGElement>) {
     return (
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>

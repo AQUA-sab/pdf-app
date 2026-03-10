@@ -430,6 +430,13 @@ export default function Home() {
     }));
   };
 
+  const handleInsertItem = () => {
+    setDocumentState(prev => ({
+        ...prev,
+        items: [...prev.items, { id: crypto.randomUUID(), heading: "", description: "", isMemoEnabled: false, textRows: 3 }]
+    }));
+  };
+
   return (
     <main className={`min-h-screen ${isDarkMode ? 'bg-[#0a0a0c]' : 'bg-gray-100'} selection:bg-[#e8af48]/30 selection:text-[#e8af48] flex flex-col font-sans transition-colors duration-300`}>
       {/* Hidden file input for loading PDFs */}
@@ -457,6 +464,7 @@ export default function Home() {
         onClear={handleClear}
         onSavePdf={handleSavePdf}
         onLoadPdf={handleLoadPdf}
+        onInsertItem={handleInsertItem}
         onInsertImage={handleInsertImageClick}
         onInsertShape={handleOpenShapeSidebar}
         onInsertText={handleInsertText}

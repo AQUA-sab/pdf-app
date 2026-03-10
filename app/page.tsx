@@ -16,6 +16,7 @@ export interface DocumentItem {
   indexText?: string;
   heading: string;
   description: string;
+  descriptionContinuations?: string[]; // 余白超過時に次ページへ送られたテキスト断片
   isMemoEnabled: boolean;
   textRows: number;
 }

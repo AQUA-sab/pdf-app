@@ -9,9 +9,10 @@ interface ContentEditableDivProps {
     style?: React.CSSProperties;
     placeholder?: string;
     tagName?: string;
+    dataAttrs?: Record<string, string>; // data-* 属性
 }
 
-export function ContentEditableDiv({ html, onChange, className, style, placeholder, tagName = "div" }: ContentEditableDivProps) {
+export function ContentEditableDiv({ html, onChange, className, style, placeholder, tagName = "div", dataAttrs }: ContentEditableDivProps) {
     const elRef = useRef<HTMLElement>(null);
     const isLocalChange = useRef(false);
 
@@ -54,5 +55,6 @@ export function ContentEditableDiv({ html, onChange, className, style, placehold
         style,
         "data-placeholder": placeholder,
         spellCheck: false,
+        ...dataAttrs,
     });
 }

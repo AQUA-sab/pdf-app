@@ -54,8 +54,8 @@ body::-webkit-scrollbar-thumb:hover {
     color: black !important;
     margin: 0 !important;
     padding: 0 !important;
-    width: 210mm !important;
-    /* Force physical width */
+    width: 100% !important;
+    /* Allow browser native print width adapting to page size */
     height: auto !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;

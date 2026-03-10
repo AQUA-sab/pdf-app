@@ -191,7 +191,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                     id="pdf-content"
                     ref={contentRef}
                     onClick={handleBackgroundClick}
-                    className="w-full h-full flex flex-col print:!m-0 outline-none print-paper relative"
+                    className="w-full h-full flex flex-col print:block print:!m-0 outline-none print-paper relative"
                     style={{
                         minHeight: `min(calc(${pageCount} * var(--page-h) + ${pageCount > 1 ? (pageCount - 1) * PAGE_GAP_PX : 0}px), 100%)`, // Screen display fallback, but flows naturally
                         padding: `${paddingPx}px`,
@@ -200,9 +200,9 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                     }}
                 >
                     {/* Paper Content Wrapper */}
-                    <div className="flex-1 flex flex-col gap-6 relative z-10 w-full mb-20 text-black">
+                    <div className="flex-1 flex flex-col print:block relative z-10 w-full text-black">
                         {/* Title and Date - avoid breaking after title */}
-                        <div className="flex flex-col pb-6 mb-2 break-inside-avoid break-after-avoid page-breakable" style={{ borderBottom: '1px solid #0000001a' }}>
+                        <div className="flex flex-col pb-6 mb-8 break-inside-avoid break-after-avoid page-breakable" style={{ borderBottom: '1px solid #0000001a' }}>
                             <div className="flex items-start justify-between">
                                 <ContentEditableDiv
                                     tagName="h1"
@@ -224,7 +224,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                         </div>
 
                         {documentState.isAttendeesVisible !== false && (
-                            <div className="flex gap-4 break-inside-avoid page-breakable">
+                            <div className="flex gap-4 break-inside-avoid page-breakable mb-6">
                                 <span className="font-semibold min-w-[80px]" style={{ color: '#374151' }}>参加者:</span>
                                 <ContentEditableDiv
                                     tagName="div"
@@ -237,9 +237,9 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                             </div>
                         )}
 
-                        <div className="flex-1 mt-6 flex flex-col gap-6">
+                        <div className="flex-1 mt-6 flex flex-col print:block">
                             {documentState.items.map((item, index) => (
-                                <div key={item.id} className="flex gap-4 items-baseline pb-2 break-inside-avoid relative group page-breakable">
+                                <div key={item.id} className="flex gap-4 items-baseline pb-2 mb-6 break-inside-avoid relative group page-breakable">
                                     <div className="font-bold w-8 shrink-0 text-xl text-right whitespace-nowrap flex justify-end" style={{ color: '#9ca3af' }}>
                                         <ContentEditableDiv
                                             tagName="span"

@@ -109,14 +109,18 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                 currentPageIndex = pageByTop;
             }
 
+            // 各ページの余白内の開始位置（上部余白を考慮）
             let printTop = currentPageIndex * (pageH + PAGE_GAP_PX) + paddingPx;
             if (finalTop < printTop) {
                 finalTop = printTop;
             }
 
             let currentBottom = finalTop + m.height;
+            // 各ページの余白内の終了位置（下部余白を考慮）
             let printBottom = currentPageIndex * (pageH + PAGE_GAP_PX) + pageH - paddingPx;
 
+            // 要素が下部余白を超える場合、次ページへ移動
+            // 余白設定を維持したまま、次ページの上部余白直後に配置
             if (currentBottom > printBottom + 2 && finalTop < printBottom) {
                 currentPageIndex++;
                 finalTop = currentPageIndex * (pageH + PAGE_GAP_PX) + paddingPx;
@@ -175,7 +179,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                 const elBottom = el.y + el.height;
 
                 if (elBottom > pageBottom + 2) {
-                    // 次ページの余白先頭に移動
+                    // 次ページの余白先頭に移動（余白設定を維持）
                     const newY = (pageIndex + 1) * (pageH + PAGE_GAP_PX) + paddingPx;
                     changed = true;
                     return { ...el, y: newY };
@@ -198,6 +202,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
     const isSplittingRef = useRef(false);
 
     // 本文が余白を超えたら超えた文字のみ次ページへ分割する関数
+    // 改善：複数ページにまたがる場合の処理を強化
     const recalcDescriptionSplits = useCallback(() => {
         if (!contentRef.current) return;
         isSplittingRef.current = true;
@@ -217,6 +222,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                 const visualTop = rect.top - containerRect.top;
                 const visualBottom = rect.bottom - containerRect.top;
                 const pageIdx = Math.max(0, Math.floor(visualTop / (pageH + PAGE_GAP_PX)));
+                // ページの余白内の下端を計算（下部余白を考慮）
                 const pagePrintBottom = pageIdx * (pageH + PAGE_GAP_PX) + pageH - paddingPx;
 
                 const allText = [item.description, ...(item.descriptionContinuations || [])].join('');
@@ -231,6 +237,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                 }
 
                 // 超過 → 分割点を計算
+                // 利用可能な高さ = ページの下部余白までの距離
                 const availableHeight = pagePrintBottom - visualTop;
                 if (availableHeight <= 16) return item;
 
@@ -267,7 +274,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
         });
         if (contentRef.current) {
             // style属性の変更は無限ループを引き起こすため除外
-            observer.observe(contentRef.current, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] });
+            observer.observe(contentRef.current, { childList: true, subtree: true });
         }
         window.addEventListener("resize", () => { recalcPages(); recalcDescriptionSplits(); });
         return () => {

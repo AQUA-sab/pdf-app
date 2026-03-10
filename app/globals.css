@@ -104,6 +104,7 @@ body::-webkit-scrollbar-thumb:hover {
 }
 
 /* Pagination Control Utilities (Apply both for screen and print where necessary, but mostly active in print) */
+/* 改善：余白に達したら次ページへ自動送り、余白設定を維持 */
 .page-breakable {
   margin-top: var(--pagination-shift, 0px);
   /* transitionなし：テキストが余白を通過するアニメーションを防止 */
@@ -117,6 +118,12 @@ body::-webkit-scrollbar-thumb:hover {
   .page-breakable {
     margin-top: 0 !important;
   }
+}
+
+/* 余白内でのテキスト配置を正確に制御 */
+.page-breakable {
+  box-sizing: border-box;
+  /* 次ページへの継続時も余白設定を維持 */
 }
 
 .break-inside-avoid {

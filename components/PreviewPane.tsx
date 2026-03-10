@@ -18,6 +18,44 @@ const PAGE_H_A4 = 1123; // px
 // Gap between pages in px
 const PAGE_GAP_PX = 40;
 
+/**
+ * 指定エレメントのテキストが availableHeight 内に収まる分割点をバイナリサーチで特定
+ * @returns 分割点の文字インデックス。分割不要ならば -1
+ */
+function findSplitIndex(el: HTMLElement, availableHeight: number): number {
+    const text = el.innerText || '';
+    if (!text || el.scrollHeight <= availableHeight) return -1;
+
+    const w = el.getBoundingClientRect().width;
+    if (w <= 0) return -1;
+
+    const cs = getComputedStyle(el);
+    const clone = document.createElement('div');
+    clone.style.cssText = [
+        'position:absolute', 'left:-9999px', 'top:-9999px',
+        'visibility:hidden', `width:${w}px`, 'height:auto',
+        `font-size:${cs.fontSize}`, `line-height:${cs.lineHeight}`,
+        `font-family:${cs.fontFamily}`, `white-space:${cs.whiteSpace}`,
+        `word-break:${cs.wordBreak}`, `overflow-wrap:${cs.overflowWrap}`,
+        `padding:${cs.padding}`
+    ].join(';');
+    document.body.appendChild(clone);
+
+    let lo = 0, hi = text.length;
+    while (lo < hi) {
+        const mid = Math.floor((lo + hi) / 2);
+        clone.innerText = text.substring(0, mid);
+        if (clone.scrollHeight <= availableHeight) lo = mid + 1;
+        else hi = mid;
+    }
+    document.body.removeChild(clone);
+
+    // 単語境界に切り上げ
+    let idx = lo;
+    while (idx > 0 && text[idx] !== ' ' && text[idx] !== '\n') idx--;
+    return idx > 0 ? idx : lo;
+}
+
 export function PreviewPane({ documentState, setDocumentState, onEditShape }: PreviewPaneProps) {
     const isPortrait = documentState.orientation === 'portrait';
     const contentRef = useRef<HTMLDivElement>(null);
@@ -29,10 +67,17 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
     // Padding converted from mm to px: roughly 3.7795 px per mm.
     const paddingPx = documentState.padding * 3.7795;
 
-    // Recalculate page count
+    // floatingElementsの最新値を常にrefで保持（recalcPages内から参照するため）
+    const floatingElementsRef = useRef(documentState.floatingElements);
+    useEffect(() => {
+        floatingElementsRef.current = documentState.floatingElements;
+    });
+
+    // Recalculate page count (テキストブロックの折り返し計算 + ページ数確定)
     const recalcPages = useCallback(() => {
         if (!contentRef.current) return;
 
+        // --- テキストブロックのページ送り計算 ---
         const blocks = Array.from(contentRef.current.querySelectorAll('.page-breakable')) as HTMLElement[];
         blocks.forEach(b => {
             b.style.removeProperty('--pagination-shift');
@@ -96,33 +141,145 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
             const lastM = measurements[measurements.length - 1];
             totalDisplayHeight = (lastM.originalTop + accumulatedShift) + lastM.height;
         } else {
-            totalDisplayHeight = contentRef.current.scrollHeight;
+            // ブロックがない場合は上下余白分だけ（空ドキュメントは1ページ）
+            totalDisplayHeight = paddingPx * 2;
         }
 
         // Restore minHeight immediately after reading
         contentRef.current.style.minHeight = oldMinHeight;
 
-        const calculatedPages = Math.ceil((totalDisplayHeight + paddingPx) / (pageH + PAGE_GAP_PX));
+        // フローティング要素の最大下端もページ数計算に考慮（refから参照）
+        let floatingMaxBottom = 0;
+        floatingElementsRef.current?.forEach(el => {
+            const bottom = el.y + el.height;
+            if (bottom > floatingMaxBottom) floatingMaxBottom = bottom;
+        });
+
+        const effectiveHeight = Math.max(totalDisplayHeight, floatingMaxBottom);
+        const calculatedPages = Math.ceil((effectiveHeight + paddingPx) / (pageH + PAGE_GAP_PX));
         setPageCount(Math.max(1, calculatedPages));
+    }, [pageH, paddingPx]);
+
+    // フローティング要素が余白をはみ出したら次ページへ自動移動（recalcPagesとは独立したEffect）
+    useEffect(() => {
+        setDocumentState(prev => {
+            if (!prev.floatingElements || prev.floatingElements.length === 0) return prev;
+
+            let changed = false;
+            const updated = prev.floatingElements.map(el => {
+                // 要素が所属するページを計算
+                const pageIndex = Math.floor(el.y / (pageH + PAGE_GAP_PX));
+                // そのページの余白内の下端（ピクセル、絶対座標）
+                const pageBottom = pageIndex * (pageH + PAGE_GAP_PX) + pageH - paddingPx;
+                // 要素の絶対下端
+                const elBottom = el.y + el.height;
+
+                if (elBottom > pageBottom + 2) {
+                    // 次ページの余白先頭に移動
+                    const newY = (pageIndex + 1) * (pageH + PAGE_GAP_PX) + paddingPx;
+                    changed = true;
+                    return { ...el, y: newY };
+                }
+                return el;
+            });
+
+            if (!changed) return prev;
+            return { ...prev, floatingElements: updated };
+        });
+    }, [documentState.floatingElements, pageH, paddingPx, setDocumentState]);
+
+    // itemsの最新値をrefで保持（分割ロジック内でのstate参照用）
+    const itemsRef = useRef(documentState.items);
+    useEffect(() => {
+        itemsRef.current = documentState.items;
+    });
+
+    // 分割計算中フラグ（MutationObserverの再発火を防止する）
+    const isSplittingRef = useRef(false);
+
+    // 本文が余白を超えたら超えた文字のみ次ページへ分割する関数
+    const recalcDescriptionSplits = useCallback(() => {
+        if (!contentRef.current) return;
+        isSplittingRef.current = true;
+        const containerRect = contentRef.current.getBoundingClientRect();
+
+        setDocumentState(prev => {
+            if (!prev.items.length) { isSplittingRef.current = false; return prev; }
+            let changed = false;
+
+            const newItems = prev.items.map(item => {
+                const descEl = contentRef.current?.querySelector(
+                    `[data-desc-id="${item.id}"]`
+                ) as HTMLElement | null;
+                if (!descEl) return item;
+
+                const rect = descEl.getBoundingClientRect();
+                const visualTop = rect.top - containerRect.top;
+                const visualBottom = rect.bottom - containerRect.top;
+                const pageIdx = Math.max(0, Math.floor(visualTop / (pageH + PAGE_GAP_PX)));
+                const pagePrintBottom = pageIdx * (pageH + PAGE_GAP_PX) + pageH - paddingPx;
+
+                const allText = [item.description, ...(item.descriptionContinuations || [])].join('');
+
+                if (visualBottom <= pagePrintBottom + 2) {
+                    // 収まっている → continuationsをクリア（テキストを削った場合）
+                    if ((item.descriptionContinuations?.length ?? 0) > 0) {
+                        changed = true;
+                        return { ...item, description: allText, descriptionContinuations: [] };
+                    }
+                    return item;
+                }
+
+                // 超過 → 分割点を計算
+                const availableHeight = pagePrintBottom - visualTop;
+                if (availableHeight <= 16) return item;
+
+                const splitIdx = findSplitIndex(descEl, availableHeight);
+                if (splitIdx <= 0) return item;
+
+                const firstPart = allText.substring(0, splitIdx);
+                const rest = allText.substring(splitIdx).trimStart();
+
+                // 収束チェック：すでに同じ分割なら更新不要
+                if (firstPart === item.description &&
+                    JSON.stringify(item.descriptionContinuations ?? []) ===
+                    JSON.stringify(rest ? [rest] : [])) {
+                    return item;
+                }
+
+                changed = true;
+                return { ...item, description: firstPart, descriptionContinuations: rest ? [rest] : [] };
+            });
+
+            if (!changed) return prev;
+            return { ...prev, items: newItems };
+        });
+        isSplittingRef.current = false;
     }, [pageH, paddingPx]);
 
     useEffect(() => {
         recalcPages();
-        const observer = new MutationObserver(recalcPages);
+        recalcDescriptionSplits();
+        const observer = new MutationObserver(() => {
+            recalcPages();
+            // 分割計算中のDOMアップデートによる再発動をスキップ
+            if (!isSplittingRef.current) recalcDescriptionSplits();
+        });
         if (contentRef.current) {
-            observer.observe(contentRef.current, { childList: true, subtree: true, characterData: true, attributes: true });
+            // style属性の変更は無限ループを引き起こすため除外
+            observer.observe(contentRef.current, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['class'] });
         }
-        window.addEventListener("resize", recalcPages);
+        window.addEventListener("resize", () => { recalcPages(); recalcDescriptionSplits(); });
         return () => {
             observer.disconnect();
-            window.removeEventListener("resize", recalcPages);
+            window.removeEventListener("resize", () => { recalcPages(); recalcDescriptionSplits(); });
         };
-    }, [recalcPages]);
+    }, [recalcPages, recalcDescriptionSplits]);
 
     useEffect(() => {
-        const t = setTimeout(recalcPages, 50);
+        const t = setTimeout(() => { recalcPages(); recalcDescriptionSplits(); }, 50);
         return () => clearTimeout(t);
-    }, [documentState, recalcPages]);
+    }, [documentState, recalcPages, recalcDescriptionSplits]);
 
     const handleBackgroundClick = (e: React.MouseEvent) => {
         if (!(e.target as HTMLElement).closest('.group.absolute')) {
@@ -170,13 +327,34 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                             style={{
                                 height: 'var(--page-h)',
                                 boxShadow: '0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.04)',
-                                borderRadius: '2px', // Slight paper edge rounding
+                                borderRadius: '2px',
                                 flexShrink: 0
                             }}
                         >
-                            {/* Page Numbers inside each visible page background (screen only) */}
+                            {/* 上部余白エリア（視覚的ガイド：点線） */}
+                            <div
+                                className="absolute left-0 right-0 top-0 pointer-events-none"
+                                style={{
+                                    height: paddingPx,
+                                    borderBottom: '1px dashed rgba(0,0,0,0.07)',
+                                    background: 'rgba(0,0,0,0.012)',
+                                }}
+                            />
+                            {/* 下部余白エリア（上部余白と同じ幅・同じスタイル） */}
+                            <div
+                                className="absolute left-0 right-0 bottom-0 pointer-events-none"
+                                style={{
+                                    height: paddingPx,
+                                    borderTop: '1px dashed rgba(0,0,0,0.07)',
+                                    background: 'rgba(0,0,0,0.012)',
+                                }}
+                            />
+                            {/* Page Numbers（下部余白エリア内の右側） */}
                             {pageCount > 1 && (
-                                <div className="absolute bottom-6 right-8 text-right pointer-events-none">
+                                <div
+                                    className="absolute right-8 text-right pointer-events-none"
+                                    style={{ bottom: paddingPx / 2 - 8 }}
+                                >
                                     <span className="text-xs" style={{ color: '#9ca3af' }}>
                                         {i + 1} / {pageCount}
                                     </span>
@@ -239,55 +417,102 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
 
                         <div className="flex-1 mt-6 flex flex-col print:block">
                             {documentState.items.map((item, index) => (
-                                <div key={item.id} className="flex gap-4 items-baseline pb-2 mb-6 break-inside-avoid relative group page-breakable">
-                                    <div className="font-bold w-8 shrink-0 text-xl text-right whitespace-nowrap flex justify-end" style={{ color: '#9ca3af' }}>
-                                        <ContentEditableDiv
-                                            tagName="span"
-                                            className="min-w-[1.5rem] outline-none border-b border-transparent hover:border-gray-300 focus:border-blue-400 transition-colors cursor-text"
-                                            html={item.indexText !== undefined ? item.indexText : `${index + 1}.`}
-                                            onChange={(val) => {
-                                                setDocumentState(prev => ({
-                                                    ...prev,
-                                                    items: prev.items.map(i => i.id === item.id ? { ...i, indexText: val } : i)
-                                                }));
-                                            }}
-                                        />
+                                <React.Fragment key={item.id}>
+                                    {/* 見出し行（インデックス番号 + 見出し） - 独立したpage-breakable */}
+                                    <div className="flex gap-4 items-baseline pb-1 break-inside-avoid relative group page-breakable">
+                                        <div className="font-bold w-8 shrink-0 text-xl text-right whitespace-nowrap flex justify-end" style={{ color: '#9ca3af' }}>
+                                            <ContentEditableDiv
+                                                tagName="span"
+                                                className="min-w-[1.5rem] outline-none border-b border-transparent hover:border-gray-300 focus:border-blue-400 transition-colors cursor-text"
+                                                html={item.indexText !== undefined ? item.indexText : `${index + 1}.`}
+                                                onChange={(val) => {
+                                                    setDocumentState(prev => ({
+                                                        ...prev,
+                                                        items: prev.items.map(i => i.id === item.id ? { ...i, indexText: val } : i)
+                                                    }));
+                                                }}
+                                            />
+                                        </div>
+                                        <div className="flex-1">
+                                            <ContentEditableDiv
+                                                tagName="div"
+                                                className="text-xl font-bold leading-tight min-h-[28px]"
+                                                style={{ color: '#111827' }}
+                                                html={item.heading}
+                                                onChange={(val) => {
+                                                    setDocumentState(prev => ({
+                                                        ...prev,
+                                                        items: prev.items.map(i => i.id === item.id ? { ...i, heading: val } : i)
+                                                    }));
+                                                }}
+                                                placeholder="見出し"
+                                            />
+                                        </div>
                                     </div>
-                                    <div className="flex-1 flex flex-col gap-2">
-                                        <ContentEditableDiv
-                                            tagName="div"
-                                            className="text-xl font-bold leading-tight min-h-[28px]"
-                                            style={{ color: '#111827' }}
-                                            html={item.heading}
-                                            onChange={(val) => {
-                                                setDocumentState(prev => ({
-                                                    ...prev,
-                                                    items: prev.items.map(i => i.id === item.id ? { ...i, heading: val } : i)
-                                                }));
-                                            }}
-                                            placeholder="見出し"
-                                        />
-                                        <ContentEditableDiv
-                                            tagName="div"
-                                            className="leading-relaxed whitespace-pre-wrap min-h-[1.5rem] mt-1 -ml-3"
-                                            style={{ color: '#1f2937' }}
-                                            html={item.description || ""}
-                                            onChange={(val) => {
-                                                setDocumentState(prev => ({
-                                                    ...prev,
-                                                    items: prev.items.map(i => i.id === item.id ? { ...i, description: val } : i)
-                                                }));
-                                            }}
-                                            placeholder="本文"
-                                        />
-                                        {item.isMemoEnabled && (
-                                            <div className="mt-2 rounded-lg p-4 text-sm min-h-[80px]" style={{ backgroundColor: '#fefce880', border: '1px solid #fef08a99', color: '#374151' }}>
-                                                <div className="text-xs font-semibold mb-1 uppercase tracking-wider" style={{ color: '#854d0e99' }}>Memo</div>
-                                                <div className="w-full h-full min-h-[40px]" />
+                                    {/* 本文（見出しとは独立したpage-breakable） */}
+                                    <div className="flex gap-4 pb-2 mb-2 break-inside-avoid page-breakable">
+                                        <div className="w-8 shrink-0" />
+                                        <div className="flex-1 flex flex-col gap-2">
+                                            <ContentEditableDiv
+                                                tagName="div"
+                                                className="leading-relaxed whitespace-pre-wrap min-h-[1.5rem] -ml-3"
+                                                style={{ color: '#1f2937' }}
+                                                html={item.description || ""}
+                                                dataAttrs={{ 'data-desc-id': item.id }}
+                                                onChange={(val) => {
+                                                    setDocumentState(prev => ({
+                                                        ...prev,
+                                                        items: prev.items.map(i => i.id === item.id
+                                                            ? { ...i, description: val, descriptionContinuations: [] }
+                                                            : i)
+                                                    }));
+                                                }}
+                                                placeholder="本文"
+                                            />
+                                        </div>
+                                    </div>
+                                    {/* 本文の続き（余白超過分 - 次ページに表示） */}
+                                    {(item.descriptionContinuations || []).map((cont, ci) => (
+                                        <div key={`${item.id}-cont-${ci}`} className="flex gap-4 pb-2 mb-2 break-inside-avoid page-breakable">
+                                            <div className="w-8 shrink-0" />
+                                            <div className="flex-1 flex flex-col gap-2">
+                                                <ContentEditableDiv
+                                                    tagName="div"
+                                                    className="leading-relaxed whitespace-pre-wrap min-h-[1.5rem] -ml-3"
+                                                    style={{ color: '#1f2937' }}
+                                                    html={cont}
+                                                    onChange={(val) => {
+                                                        // 続きブロックを編集したら全部統合してcontinuationsをリセット
+                                                        setDocumentState(prev => {
+                                                            const it = prev.items.find(i => i.id === item.id);
+                                                            if (!it) return prev;
+                                                            const parts = [it.description, ...(it.descriptionContinuations || [])];
+                                                            parts[ci + 1] = val;
+                                                            return {
+                                                                ...prev,
+                                                                items: prev.items.map(i => i.id === item.id
+                                                                    ? { ...i, description: parts.join(''), descriptionContinuations: [] }
+                                                                    : i)
+                                                            };
+                                                        });
+                                                    }}
+                                                />
                                             </div>
-                                        )}
-                                    </div>
-                                </div>
+                                        </div>
+                                    ))}
+                                    {/* メモ欄 */}
+                                    {item.isMemoEnabled && (
+                                        <div className="flex gap-4 pb-2 mb-6 page-breakable">
+                                            <div className="w-8 shrink-0" />
+                                            <div className="flex-1">
+                                                <div className="mt-2 rounded-lg p-4 text-sm min-h-[80px]" style={{ backgroundColor: '#fefce880', border: '1px solid #fef08a99', color: '#374151' }}>
+                                                    <div className="text-xs font-semibold mb-1 uppercase tracking-wider" style={{ color: '#854d0e99' }}>Memo</div>
+                                                    <div className="w-full h-full min-h-[40px]" />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                </React.Fragment>
                             ))}
 
                         </div>

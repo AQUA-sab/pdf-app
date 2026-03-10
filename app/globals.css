@@ -106,8 +106,7 @@ body::-webkit-scrollbar-thumb:hover {
 /* Pagination Control Utilities (Apply both for screen and print where necessary, but mostly active in print) */
 .page-breakable {
   margin-top: var(--pagination-shift, 0px);
-  transition: margin-top 0.2s ease-out;
-  /* Smooth transition when pushing to next page */
+  /* transitionなし：テキストが余白を通過するアニメーションを防止 */
 }
 
 @media print {

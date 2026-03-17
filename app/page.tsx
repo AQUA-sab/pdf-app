@@ -49,6 +49,9 @@ export interface DocumentState {
   orientation: "portrait" | "landscape";
   padding: number;
   isAttendeesVisible: boolean;
+  // 複雑なレイアウト対応
+  layoutMode?: 'standard' | 'columns' | 'table'; // レイアウトモード
+  columnCount?: number; // 段組みの段数（layoutMode='columns'の場合）
 }
 
 export default function Home() {
@@ -62,6 +65,8 @@ export default function Home() {
     orientation: "portrait",
     padding: 24,
     isAttendeesVisible: true,
+    layoutMode: 'standard',
+    columnCount: 2,
   });
 
   // 2. UI View State
@@ -197,6 +202,8 @@ export default function Home() {
         orientation: "portrait",
         padding: 24,
         isAttendeesVisible: true,
+        layoutMode: 'standard',
+        columnCount: 2,
       });
     }
   };

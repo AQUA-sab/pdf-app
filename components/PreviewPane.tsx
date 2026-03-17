@@ -4,6 +4,7 @@ import React, { useRef, useEffect, useState, useCallback } from "react";
 import { DocumentState, FloatingElement } from "../app/page";
 import { ContentEditableDiv } from "@/components/ContentEditableDiv";
 import { FloatingObject } from "@/components/FloatingObject";
+import { findSplitIndexJapanese } from "@/lib/textSplitter";
 
 interface PreviewPaneProps {
     documentState: DocumentState;
@@ -20,40 +21,12 @@ const PAGE_GAP_PX = 40;
 
 /**
  * 指定エレメントのテキストが availableHeight 内に収まる分割点をバイナリサーチで特定
+ * 日本語テキストに対応した版
  * @returns 分割点の文字インデックス。分割不要ならば -1
  */
 function findSplitIndex(el: HTMLElement, availableHeight: number): number {
-    const text = el.innerText || '';
-    if (!text || el.scrollHeight <= availableHeight) return -1;
-
-    const w = el.getBoundingClientRect().width;
-    if (w <= 0) return -1;
-
-    const cs = getComputedStyle(el);
-    const clone = document.createElement('div');
-    clone.style.cssText = [
-        'position:absolute', 'left:-9999px', 'top:-9999px',
-        'visibility:hidden', `width:${w}px`, 'height:auto',
-        `font-size:${cs.fontSize}`, `line-height:${cs.lineHeight}`,
-        `font-family:${cs.fontFamily}`, `white-space:${cs.whiteSpace}`,
-        `word-break:${cs.wordBreak}`, `overflow-wrap:${cs.overflowWrap}`,
-        `padding:${cs.padding}`
-    ].join(';');
-    document.body.appendChild(clone);
-
-    let lo = 0, hi = text.length;
-    while (lo < hi) {
-        const mid = Math.floor((lo + hi) / 2);
-        clone.innerText = text.substring(0, mid);
-        if (clone.scrollHeight <= availableHeight) lo = mid + 1;
-        else hi = mid;
-    }
-    document.body.removeChild(clone);
-
-    // 単語境界に切り上げ
-    let idx = lo;
-    while (idx > 0 && text[idx] !== ' ' && text[idx] !== '\n') idx--;
-    return idx > 0 ? idx : lo;
+    // 日本語対応版を使用
+    return findSplitIndexJapanese(el, availableHeight);
 }
 
 export function PreviewPane({ documentState, setDocumentState, onEditShape }: PreviewPaneProps) {

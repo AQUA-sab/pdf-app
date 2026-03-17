@@ -4,6 +4,8 @@ import { useState } from "react";
 
 import { DocumentItem, DocumentState } from "../app/page";
 import { ContentEditableDiv } from "@/components/ContentEditableDiv";
+import { MarginPresetPanel } from "@/components/MarginPresetPanel";
+import { LayoutModeSelector } from "@/components/LayoutModeSelector";
 
 interface EditSidebarProps {
     documentState: DocumentState;
@@ -62,25 +64,25 @@ export function EditSidebar({ documentState, setDocumentState, onClose }: EditSi
                     </div>
                 </div>
 
-                {/* 1.5. Margin (Padding) Control */}
+                {/* 1.5. Margin (Padding) Control - Enhanced UI */}
                 <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs font-semibold text-white/50 uppercase tracking-wider">
-                        <label>余白 (Margin: {documentState.padding}mm)</label>
-                        <button
-                            onClick={() => setDocumentState(prev => ({ ...prev, padding: 24 }))}
-                            className="bg-white/5 hover:bg-white/10 text-white/40 hover:text-white px-2 py-0.5 rounded transition-colors text-[10px]"
-                            title="24mmに戻す"
-                        >
-                            リセット
-                        </button>
-                    </div>
-                    <input
-                        type="range"
-                        min="0"
-                        max="60"
-                        value={documentState.padding}
-                        onChange={(e) => setDocumentState(prev => ({ ...prev, padding: Number(e.target.value) }))}
-                        className="w-full accent-[#e8af48] cursor-pointer"
+                    <label className="text-xs font-semibold text-white/50 uppercase tracking-wider">ページ余白設定</label>
+                    <MarginPresetPanel
+                        currentMargin={documentState.padding}
+                        onMarginChange={(margin) => setDocumentState(prev => ({ ...prev, padding: margin }))}
+                        onReset={() => setDocumentState(prev => ({ ...prev, padding: 24 }))}
+                    />
+                </div>
+
+                <div className="h-px bg-white/5 w-full"></div>
+
+                {/* 1.6. Layout Mode Selection */}
+                <div className="space-y-2">
+                    <LayoutModeSelector
+                        currentMode={documentState.layoutMode || 'standard'}
+                        columnCount={documentState.columnCount || 2}
+                        onModeChange={(mode) => setDocumentState(prev => ({ ...prev, layoutMode: mode }))}
+                        onColumnCountChange={(count) => setDocumentState(prev => ({ ...prev, columnCount: count }))}
                     />
                 </div>
 

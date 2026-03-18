@@ -5,6 +5,7 @@ import { DocumentState, FloatingElement } from "../app/page";
 import { ContentEditableDiv } from "@/components/ContentEditableDiv";
 import { FloatingObject } from "@/components/FloatingObject";
 import { findSplitIndexJapanese } from "@/lib/textSplitter";
+import { LayoutRenderer } from "@/components/LayoutRenderer";
 
 interface PreviewPaneProps {
     documentState: DocumentState;
@@ -395,107 +396,7 @@ export function PreviewPane({ documentState, setDocumentState, onEditShape }: Pr
                             </div>
                         )}
 
-                        <div className="flex-1 mt-6 flex flex-col print:block">
-                            {documentState.items.map((item, index) => (
-                                <React.Fragment key={item.id}>
-                                    {/* 見出し行（インデックス番号 + 見出し） - 独立したpage-breakable */}
-                                    <div className="flex gap-4 items-baseline pb-1 break-inside-avoid relative group page-breakable">
-                                        <div className="font-bold w-8 shrink-0 text-xl text-right whitespace-nowrap flex justify-end" style={{ color: '#9ca3af' }}>
-                                            <ContentEditableDiv
-                                                tagName="span"
-                                                className="min-w-[1.5rem] outline-none border-b border-transparent hover:border-gray-300 focus:border-blue-400 transition-colors cursor-text"
-                                                html={item.indexText !== undefined ? item.indexText : `${index + 1}.`}
-                                                onChange={(val) => {
-                                                    setDocumentState(prev => ({
-                                                        ...prev,
-                                                        items: prev.items.map(i => i.id === item.id ? { ...i, indexText: val } : i)
-                                                    }));
-                                                }}
-                                            />
-                                        </div>
-                                        <div className="flex-1">
-                                            <ContentEditableDiv
-                                                tagName="div"
-                                                className="text-xl font-bold leading-tight min-h-[28px]"
-                                                style={{ color: '#111827' }}
-                                                html={item.heading}
-                                                onChange={(val) => {
-                                                    setDocumentState(prev => ({
-                                                        ...prev,
-                                                        items: prev.items.map(i => i.id === item.id ? { ...i, heading: val } : i)
-                                                    }));
-                                                }}
-                                                placeholder="見出し"
-                                            />
-                                        </div>
-                                    </div>
-                                    {/* 本文（見出しとは独立したpage-breakable） */}
-                                    <div className="flex gap-4 pb-2 mb-2 break-inside-avoid page-breakable">
-                                        <div className="w-8 shrink-0" />
-                                        <div className="flex-1 flex flex-col gap-2">
-                                            <ContentEditableDiv
-                                                tagName="div"
-                                                className="leading-relaxed whitespace-pre-wrap min-h-[1.5rem] -ml-3"
-                                                style={{ color: '#1f2937' }}
-                                                html={item.description || ""}
-                                                dataAttrs={{ 'data-desc-id': item.id }}
-                                                onChange={(val) => {
-                                                    setDocumentState(prev => ({
-                                                        ...prev,
-                                                        items: prev.items.map(i => i.id === item.id
-                                                            ? { ...i, description: val, descriptionContinuations: [] }
-                                                            : i)
-                                                    }));
-                                                }}
-                                                placeholder="本文"
-                                            />
-                                        </div>
-                                    </div>
-                                    {/* 本文の続き（余白超過分 - 次ページに表示） */}
-                                    {(item.descriptionContinuations || []).map((cont, ci) => (
-                                        <div key={`${item.id}-cont-${ci}`} className="flex gap-4 pb-2 mb-2 break-inside-avoid page-breakable">
-                                            <div className="w-8 shrink-0" />
-                                            <div className="flex-1 flex flex-col gap-2">
-                                                <ContentEditableDiv
-                                                    tagName="div"
-                                                    className="leading-relaxed whitespace-pre-wrap min-h-[1.5rem] -ml-3"
-                                                    style={{ color: '#1f2937' }}
-                                                    html={cont}
-                                                    onChange={(val) => {
-                                                        // 続きブロックを編集したら全部統合してcontinuationsをリセット
-                                                        setDocumentState(prev => {
-                                                            const it = prev.items.find(i => i.id === item.id);
-                                                            if (!it) return prev;
-                                                            const parts = [it.description, ...(it.descriptionContinuations || [])];
-                                                            parts[ci + 1] = val;
-                                                            return {
-                                                                ...prev,
-                                                                items: prev.items.map(i => i.id === item.id
-                                                                    ? { ...i, description: parts.join(''), descriptionContinuations: [] }
-                                                                    : i)
-                                                            };
-                                                        });
-                                                    }}
-                                                />
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {/* メモ欄 */}
-                                    {item.isMemoEnabled && (
-                                        <div className="flex gap-4 pb-2 mb-6 page-breakable">
-                                            <div className="w-8 shrink-0" />
-                                            <div className="flex-1">
-                                                <div className="mt-2 rounded-lg p-4 text-sm min-h-[80px]" style={{ backgroundColor: '#fefce880', border: '1px solid #fef08a99', color: '#374151' }}>
-                                                    <div className="text-xs font-semibold mb-1 uppercase tracking-wider" style={{ color: '#854d0e99' }}>Memo</div>
-                                                    <div className="w-full h-full min-h-[40px]" />
-                                                </div>
-                                            </div>
-                                        </div>
-                                    )}
-                                </React.Fragment>
-                            ))}
-
-                        </div>
+                        <LayoutRenderer documentState={documentState} setDocumentState={setDocumentState} />
                     </div>
 
                     {/* Floating Elements layer */}
